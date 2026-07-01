@@ -1,5 +1,8 @@
 "use server";
 
+import { promises as fs } from "node:fs";
+import path from "node:path";
+
 import { fetchAction } from "convex/nextjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -11,6 +14,8 @@ import {
   toDocumentChunkRecords,
   toSourceDocumentRecords,
 } from "@/lib/rag/storage-records";
+
+const SYNTHETIC_DOCS_DIR = path.join(process.cwd(), "content", "synthetic-docs");
 
 export async function embedSyntheticDocumentsAction() {
   const documents = await loadSyntheticDocuments();
@@ -42,4 +47,55 @@ export async function generateGroundedAnswerAction(formData: FormData) {
   }
 
   redirect(`/?question=${encodeURIComponent(question)}`);
+}
+
+/**
+ * Add a synthetic support document. Writes a sanitized markdown file into the
+ * synthetic-docs directory so it is picked up on the next load, chunked
+ * automatically, and made embeddable. Synthetic documents only.
+ */
+export async function addSyntheticDocumentAction(formData: FormData) {
+  const title = String(formData.get("title") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+
+  if (!title || !body) {
+    throw new Error("A title and document text are both required.");
+  }
+
+  if (title.length > 120) {
+    throw new Error("Keep the title under 120 characters.");
+  }
+
+  if (body.length > 50_000) {
+    throw new Error("Keep the document under 50,000 characters.");
+  }
+
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60);
+
+  if (!slug) {
+    throw new Error("Use a title that contains letters or numbers.");
+  }
+
+  const filePath = path.resolve(SYNTHETIC_DOCS_DIR, `${slug}.md`);
+
+  if (!filePath.startsWith(path.resolve(SYNTHETIC_DOCS_DIR) + path.sep)) {
+    throw new Error("That title is not a valid document name.");
+  }
+
+  const markdown = body.startsWith("# ") ? body : `# ${title}\n\n${body}`;
+
+  try {
+    await fs.writeFile(filePath, `${markdown}\n`, { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error("A document with a similar title already exists.");
+    }
+    throw error;
+  }
+
+  revalidatePath("/");
 }

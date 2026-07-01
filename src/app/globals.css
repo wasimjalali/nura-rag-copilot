@@ -1,34 +1,360 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ *
+ * Nura design tokens (light theme). Named by role, not by hue, so a
+ * dark theme can be derived later without renaming. Neutrals carry a
+ * slight cool bias toward the royal-blue accent so they read chosen.
+ * ------------------------------------------------------------------ */
 :root {
-  --background: #f7f1e5;
-  --foreground: #111827;
+  --canvas: #f2f5f9;
+  --surface: #ffffff;
+  --sunken: #eef2f7;
+
+  --ink: #0e1b2b;
+  --ink-muted: #566372;
+  --ink-faint: #5f6b79;
+
+  --brand: #102a43;
+  --brand-ink: #e9f0fb;
+
+  --accent: #2f6fed;
+  --accent-strong: #1f5ede;
+  --accent-soft: #e7f0fe;
+  --accent-deep: #16448f;
+  --accent-on-dark: #6fa4ff;
+
+  --border: #e3e8ef;
+  --border-strong: #cfd8e3;
+
+  --success: #0f6f56;
+  --success-soft: #e4f4ee;
+  --warning: #8a5300;
+  --warning-soft: #fbf1de;
+  --danger: #b23c22;
+  --danger-soft: #fbeae5;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --shadow-sm: 0 1px 2px rgba(16, 42, 67, 0.06);
+  --shadow-card: 0 1px 0 rgba(16, 42, 67, 0.03),
+    0 12px 28px -18px rgba(16, 42, 67, 0.22);
+  --shadow-raise: 0 1px 0 rgba(16, 42, 67, 0.04),
+    0 18px 40px -22px rgba(16, 42, 67, 0.26);
+  --shadow-pop: 0 24px 52px -24px rgba(16, 42, 67, 0.32);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-on-dark: var(--accent-on-dark);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
 }
 
+/* ------------------------------------------------------------------ *
+ * Base layer
+ * ------------------------------------------------------------------ */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv05", "ss01";
 }
 
-@keyframes nura-fade-up {
+/* Base resets live in @layer base so Tailwind utilities (e.g. outline-none on
+   the composer textarea) can override them and there is no double focus ring. */
+@layer base {
+  button:not(:disabled),
+  summary,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--accent-soft);
+    color: var(--brand);
+  }
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ *
+ * Components (copy-adapted from the design-craft recipe shelf).
+ * In @layer components so Tailwind utilities (hidden, bg-*, etc.) can
+ * override these — unlayered rules would otherwise beat every utility.
+ * ------------------------------------------------------------------ */
+@layer components {
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 550;
+  border-radius: 12px;
+  transition: background-color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out), color 150ms var(--ease-out),
+    box-shadow 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.btn-primary {
+  background-color: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:not(:disabled):hover {
+  background-color: var(--accent-strong);
+  box-shadow: var(--shadow-raise);
+}
+.btn-primary:not(:disabled):active {
+  transform: scale(0.98);
+}
+.btn-secondary {
+  background-color: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border-strong);
+}
+.btn-secondary:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  background-color: var(--accent-soft);
+}
+.btn-secondary:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--ink-muted);
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.icon-btn:hover {
+  background-color: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.field-input {
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+}
+.field-input:focus-within,
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.15);
+}
+
+/* Left navigation item */
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 12px;
+  padding: 9px 12px;
+  color: var(--ink-muted);
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.nav-item:hover {
+  background-color: var(--sunken);
+  color: var(--ink);
+}
+.nav-item[aria-current="page"] {
+  background-color: var(--accent-soft);
+  color: var(--accent-deep);
+  font-weight: 550;
+}
+.nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background-color: var(--accent);
+}
+
+/* Citation chip inside an answer */
+.cite {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--accent-deep);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 7px;
+  transition: background-color 120ms var(--ease-out), border-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+.cite:hover,
+.cite[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+/* Evidence card + signature highlight */
+.evidence-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 160ms var(--ease-out), background-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+.evidence-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-card);
+}
+.evidence-card[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.evidence-card[data-flash="true"] {
+  animation: evidence-flash 900ms var(--ease-out);
+}
+@keyframes evidence-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(47, 111, 237, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 8px rgba(47, 111, 237, 0);
+  }
+}
+
+/* Skeleton, entrances */
+.skeleton {
+  border-radius: 8px;
+  background: var(--border);
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.rise {
+  animation: rise 240ms var(--ease-out) both;
+}
+@keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(14px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: translateY(8px);
   }
 }
+
+.panel-in {
+  animation: panel-in 260ms var(--ease-out) both;
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.msg-in {
+  animation: msg-in 260ms var(--ease-out) both;
+}
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Dialog: solid scrim, no blur; ease-out, no spring. */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(14, 27, 43, 0.45);
+  animation: overlay-fade 200ms var(--ease-out) both;
+}
+.dialog-panel {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-pop);
+  animation: dialog-in 250ms var(--ease-out) both;
+}
+@keyframes overlay-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+/* Generation stepper: steps rise in one after another. */
+.step-line {
+  animation: step-in 300ms var(--ease-out) both;
+}
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+} /* @layer components */
 
 @media (prefers-reduced-motion: reduce) {
   *,

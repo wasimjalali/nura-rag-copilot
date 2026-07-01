@@ -1,3 +1,5 @@
+import { NuraLogo } from "@/components/nura-logo";
+
 const pipeline = [
   {
     label: "Foundation",
@@ -26,40 +28,37 @@ const pipeline = [
 
 export function FoundationOverview() {
   return (
-    <main className="min-h-screen bg-[#f7f1e5] text-[#111827]">
-      <section className="mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-6 py-12">
-        <div className="max-w-3xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
+    <main className="min-h-screen bg-canvas text-ink">
+      <section className="mx-auto flex min-h-screen w-full max-w-5xl flex-col justify-center px-6 py-16">
+        <NuraLogo />
+
+        <div className="mt-10 max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-deep">
             Project 01
           </p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-[#071a33] sm:text-6xl">
+          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.02em] text-ink sm:text-5xl">
             Nura RAG Copilot
           </h1>
-          <p className="mt-5 max-w-2xl text-base leading-7 text-[#39465a] sm:text-lg">
+          <p className="mt-4 max-w-xl text-base leading-7 text-ink-muted">
             A learn-by-building support copilot for a synthetic supplement
             e-commerce company. This first phase keeps the foundation clear
             before we add documents, embeddings, retrieval, and grounded answers.
           </p>
         </div>
 
-        <div className="mt-10 grid gap-3 md:grid-cols-5">
+        <ol className="mt-12 grid gap-3 md:grid-cols-5">
           {pipeline.map((step, index) => (
-            <article
-              className="border border-[#ded4c4] bg-white p-4 shadow-sm"
-              key={step.label}
-            >
-              <p className="font-mono text-sm font-semibold text-[#123c69]">
+            <li className="card p-4" key={step.label}>
+              <p className="tnum font-mono text-xs font-semibold text-accent-deep">
                 {(index + 1).toString().padStart(2, "0")}
               </p>
-              <h2 className="mt-3 text-base font-semibold text-[#071a33]">
-                {step.label}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-[#4b5870]">
+              <h2 className="mt-3 text-sm font-semibold text-ink">{step.label}</h2>
+              <p className="mt-2 text-[13px] leading-6 text-ink-muted">
                 {step.description}
               </p>
-            </article>
+            </li>
           ))}
-        </div>
+        </ol>
       </section>
     </main>
   );

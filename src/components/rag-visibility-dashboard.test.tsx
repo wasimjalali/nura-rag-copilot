@@ -39,11 +39,12 @@ const embeddingStorageStatus = {
 } as const;
 
 describe("RagVisibilityDashboard", () => {
-  it("renders the Atlas Navy product shell with the expected workspace views", () => {
+  it("renders the product shell with the expected workspace views", () => {
     render(
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
+        addDocumentAction={async () => {}}
         embedAction={async () => {}}
         generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
@@ -52,14 +53,14 @@ describe("RagVisibilityDashboard", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Nura Command Center" }),
+      screen.getByRole("heading", { name: "Ask a grounded question" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Knowledge Base" }),
+      screen.getByRole("button", { name: "Knowledge base" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Retrieval Lab" }),
+      screen.getByRole("button", { name: "Retrieval" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Evaluations" }),
@@ -72,6 +73,7 @@ describe("RagVisibilityDashboard", () => {
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
+        addDocumentAction={async () => {}}
         embedAction={async () => {}}
         generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
@@ -79,24 +81,24 @@ describe("RagVisibilityDashboard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Knowledge Base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Knowledge base" }));
     expect(
-      screen.getByRole("heading", { name: "Knowledge Base" }),
+      screen.getByRole("heading", { name: "Knowledge base" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Retrieval Lab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieval" }));
     expect(
-      screen.getByRole("heading", { name: "Retrieval Lab" }),
+      screen.getByRole("heading", { name: "Retrieval" }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Evaluations" }));
     expect(
-      screen.getByRole("heading", { name: "Evaluation Studio" }),
+      screen.getByRole("heading", { name: "Evaluations" }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(
-      screen.getByRole("heading", { name: "Workspace Settings" }),
+      screen.getByRole("heading", { name: "Settings" }),
     ).toBeInTheDocument();
   });
 
@@ -105,6 +107,7 @@ describe("RagVisibilityDashboard", () => {
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
+        addDocumentAction={async () => {}}
         embedAction={async () => {}}
         generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
@@ -113,18 +116,18 @@ describe("RagVisibilityDashboard", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Generate grounded answer" }),
+      screen.getByRole("heading", { name: "Ask a grounded question" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Generate answer" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Knowledge Base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Knowledge base" }));
     expect(screen.getAllByText("return_policy.md").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("return_policy__chunk_001")).toBeInTheDocument();
     expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Retrieval Lab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retrieval" }));
     expect(
       screen.getByText(/This is the evidence pool/),
     ).toBeInTheDocument();
@@ -147,6 +150,7 @@ describe("RagVisibilityDashboard", () => {
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
+        addDocumentAction={async () => {}}
         embedAction={async () => {}}
         generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
@@ -167,6 +171,7 @@ describe("RagVisibilityDashboard", () => {
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
+        addDocumentAction={async () => {}}
         embedAction={async () => {}}
         generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
@@ -221,8 +226,6 @@ describe("RagVisibilityDashboard", () => {
       />,
     );
 
-    expect(screen.getByText("Grounded answer")).toBeInTheDocument();
-    expect(screen.getByText("gpt-5.4-mini")).toBeInTheDocument();
     expect(
       screen.getByText("Opened products may be returned within 30 days."),
     ).toBeInTheDocument();
@@ -232,6 +235,9 @@ describe("RagVisibilityDashboard", () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText("[1]").length).toBeGreaterThan(0);
     expect(screen.getAllByText("[2]").length).toBeGreaterThan(0);
+
+    // Cited chunks live in the on-demand sources panel.
+    fireEvent.click(screen.getByRole("button", { name: /Sources/ }));
     expect(screen.getAllByText("Score 0.812").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Score 0.612").length).toBeGreaterThan(0);
     expect(screen.getAllByText("return_policy.md").length).toBeGreaterThan(0);
@@ -248,6 +254,7 @@ describe("RagVisibilityDashboard", () => {
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
+        addDocumentAction={async () => {}}
         embedAction={async () => {}}
         generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
@@ -289,6 +296,7 @@ describe("RagVisibilityDashboard", () => {
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
+        addDocumentAction={async () => {}}
         embedAction={async () => {}}
         generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}

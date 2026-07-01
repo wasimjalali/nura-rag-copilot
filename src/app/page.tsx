@@ -3,6 +3,7 @@ import { fetchAction, fetchQuery } from "convex/nextjs";
 import { RagVisibilityDashboard } from "@/components/rag-visibility-dashboard";
 import { api } from "../../convex/_generated/api";
 import {
+  addSyntheticDocumentAction,
   embedSyntheticDocumentsAction,
   generateGroundedAnswerAction,
 } from "./actions";
@@ -41,6 +42,7 @@ export default async function Home({ searchParams }: HomeProps) {
     <RagVisibilityDashboard
       chunks={chunks}
       documents={documents}
+      addDocumentAction={addSyntheticDocumentAction}
       embedAction={embedSyntheticDocumentsAction}
       generateAnswerAction={generateGroundedAnswerAction}
       embeddingConfig={embeddingConfig}

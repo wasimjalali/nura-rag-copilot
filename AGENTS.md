@@ -7,7 +7,7 @@ Nura RAG Copilot is Project 01 in Wasim's AI Specialist to Agentic AI Engineer l
 ## Stack
 
 - Frontend: Next.js App Router with TypeScript.
-- Styling: Tailwind CSS.
+- Styling: Tailwind CSS v4 with role-named design tokens.
 - Backend/database/vector search: Convex.
 - Embeddings: `text-embedding-3-small` at 1536 dimensions.
 - Answer model: `gpt-5.4-mini` through Microsoft Foundry.
@@ -44,10 +44,17 @@ Nura RAG Copilot is Project 01 in Wasim's AI Specialist to Agentic AI Engineer l
 
 ## Definition Of Done For Project 01
 
-- Synthetic docs are loaded.
-- Chunks are visible.
-- Embeddings are stored.
-- Convex vector retrieval works.
-- Answers are grounded with citations.
-- Unsupported claims are refused.
-- Ten manual eval questions are included with observations.
+- [x] Synthetic docs are loaded.
+- [x] Chunks are visible.
+- [x] Embeddings are stored.
+- [x] Convex vector retrieval works.
+- [x] Answers are grounded with citations.
+- [x] Unsupported claims are refused.
+- [x] Ten manual eval questions are included (`src/lib/eval/manual-eval-set.ts`).
+
+## Interface
+
+The core RAG loop is wrapped in a premium, production-ready workspace UI: a chat
+view with inline citations and an on-demand sources panel, plus knowledge base,
+retrieval, evaluations, and settings views. All visual work follows the
+`design-craft` discipline and role-named tokens in `src/app/globals.css`.
