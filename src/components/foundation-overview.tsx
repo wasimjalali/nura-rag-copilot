@@ -14,7 +14,8 @@ const pipeline = [
   },
   {
     label: "Answer loop",
-    description: "Grounded GPT-4.1 answers with citations and refusal behavior.",
+    description:
+      "Grounded GPT-5.4 mini answers with citations and refusal behavior.",
   },
   {
     label: "Manual eval",

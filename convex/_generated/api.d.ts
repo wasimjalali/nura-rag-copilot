@@ -8,13 +8,19 @@
  * @module
  */
 
+import type * as ragEmbedding from "../ragEmbedding.js";
+import type * as ragStorage from "../ragStorage.js";
+
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 
-declare const fullApi: ApiFromModules<{}>;
+declare const fullApi: ApiFromModules<{
+  ragEmbedding: typeof ragEmbedding;
+  ragStorage: typeof ragStorage;
+}>;
 
 /**
  * A utility for referencing Convex functions in your app's public API.

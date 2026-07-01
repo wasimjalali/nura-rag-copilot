@@ -4,7 +4,7 @@ Nura RAG Copilot is a learning-first RAG support assistant for a synthetic suppl
 
 ## Current Phase
 
-Embedding readiness:
+Real embedding storage:
 
 - Next.js app scaffold
 - Convex backend location
@@ -19,6 +19,10 @@ Embedding readiness:
 - Embedding model config for `text-embedding-3-small`
 - Vector dimension validation for 1536-dimension embeddings
 - Embedding readiness card in the dashboard
+- Convex source document and chunk storage
+- Real Microsoft Foundry embedding action
+- 1536-dimension validation before vectors are stored
+- Storage status panel in the dashboard
 
 ## Planned RAG Pipeline
 

@@ -29,13 +29,24 @@ const embeddingConfig = {
   deploymentEnvVar: "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
 } as const;
 
+const embeddingStorageStatus = {
+  storedDocuments: 10,
+  storedChunks: 31,
+  embeddedChunks: 30,
+  lastRunStatus: "failed",
+  lastRunMessage: "1 chunk returned 3 dimensions.",
+  lastEmbeddedAt: 1782920000000,
+} as const;
+
 describe("RagVisibilityDashboard", () => {
   it("shows documents and chunk preview details", () => {
     render(
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
+        embedAction={async () => {}}
         embeddingConfig={embeddingConfig}
+        embeddingStorageStatus={embeddingStorageStatus}
       />,
     );
 
@@ -52,6 +63,13 @@ describe("RagVisibilityDashboard", () => {
     expect(screen.getByText("1536 dimensions")).toBeInTheDocument();
     expect(
       screen.getByText(/Human review comes before embedding/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Storage status")).toBeInTheDocument();
+    expect(screen.getByText("31 stored")).toBeInTheDocument();
+    expect(screen.getByText("30 embedded")).toBeInTheDocument();
+    expect(screen.getByText("1 chunk returned 3 dimensions.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Store and embed chunks" }),
     ).toBeInTheDocument();
   });
 });

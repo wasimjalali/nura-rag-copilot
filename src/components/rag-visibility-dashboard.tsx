@@ -1,20 +1,31 @@
 import type { DocumentChunk, KnowledgeDocument } from "@/lib/rag/types";
 import type { embeddingConfig } from "@/lib/rag/embedding-config";
+import {
+  summarizeEmbeddingStorageStatus,
+  type EmbeddingStorageStatus,
+} from "@/lib/rag/storage-records";
 
 type RagVisibilityDashboardProps = {
   documents: KnowledgeDocument[];
   chunks: DocumentChunk[];
+  embedAction: () => Promise<void>;
   embeddingConfig: typeof embeddingConfig;
+  embeddingStorageStatus: EmbeddingStorageStatus;
 };
 
 export function RagVisibilityDashboard({
   documents,
   chunks,
+  embedAction,
   embeddingConfig,
+  embeddingStorageStatus,
 }: RagVisibilityDashboardProps) {
   const totalWords = documents.reduce(
     (sum, document) => sum + countWords(document.text),
     0,
+  );
+  const storageSummary = summarizeEmbeddingStorageStatus(
+    embeddingStorageStatus,
   );
 
   return (
@@ -79,6 +90,62 @@ export function RagVisibilityDashboard({
                 </dd>
               </div>
             </dl>
+          </div>
+        </section>
+
+        <section className="mt-6 border border-[#c7d1dc] bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
+                Storage status
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-[#071a33]">
+                Store reviewed chunks and generate real embeddings
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#39465a]">
+                This action sends the reviewed synthetic chunks to Convex,
+                calls Microsoft Foundry for embeddings, validates 1536
+                dimensions, and stores the vectors server-side.
+              </p>
+              <p className="mt-3 text-sm font-medium text-[#123c69]">
+                {storageSummary.lastRunMessage}
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[420px]">
+              <Metric
+                label="Preview"
+                value={`${chunks.length.toLocaleString("en-US")} chunks`}
+              />
+              <Metric
+                label="Documents"
+                value={storageSummary.storedDocumentsLabel}
+              />
+              <Metric label="Chunks" value={storageSummary.storedChunksLabel} />
+              <Metric
+                label="Embeddings"
+                value={storageSummary.embeddedChunksLabel}
+              />
+              <div className="border border-[#ded4c4] bg-white p-3 shadow-sm sm:col-span-2">
+                <dt className="text-xs uppercase tracking-[0.14em] text-[#69778a]">
+                  Last run
+                </dt>
+                <dd className="mt-2 font-mono text-sm font-semibold text-[#071a33]">
+                  {storageSummary.lastRunLabel}
+                  <span className="ml-2 text-[#5f6d7f]">
+                    {storageSummary.lastEmbeddedAtLabel}
+                  </span>
+                </dd>
+              </div>
+              <form action={embedAction} className="sm:col-span-2">
+                <button
+                  className="w-full border border-[#123c69] bg-[#123c69] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0b2b4e]"
+                  type="submit"
+                >
+                  Store and embed chunks
+                </button>
+              </form>
+            </div>
           </div>
         </section>
 
