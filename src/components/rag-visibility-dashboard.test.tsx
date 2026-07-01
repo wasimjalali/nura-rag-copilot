@@ -22,9 +22,22 @@ const chunks = [
   },
 ];
 
+const embeddingConfig = {
+  provider: "azure-openai",
+  model: "text-embedding-3-small",
+  dimensions: 1536,
+  deploymentEnvVar: "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
+} as const;
+
 describe("RagVisibilityDashboard", () => {
   it("shows documents and chunk preview details", () => {
-    render(<RagVisibilityDashboard documents={documents} chunks={chunks} />);
+    render(
+      <RagVisibilityDashboard
+        chunks={chunks}
+        documents={documents}
+        embeddingConfig={embeddingConfig}
+      />,
+    );
 
     expect(
       screen.getByRole("heading", { name: "RAG visibility" }),
@@ -34,6 +47,11 @@ describe("RagVisibilityDashboard", () => {
     expect(screen.getByText("Opened Products")).toBeInTheDocument();
     expect(
       screen.getByText(/This is what will be embedded next/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("text-embedding-3-small")).toBeInTheDocument();
+    expect(screen.getByText("1536 dimensions")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Human review comes before embedding/),
     ).toBeInTheDocument();
   });
 });

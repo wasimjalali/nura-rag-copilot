@@ -1,13 +1,16 @@
 import type { DocumentChunk, KnowledgeDocument } from "@/lib/rag/types";
+import type { embeddingConfig } from "@/lib/rag/embedding-config";
 
 type RagVisibilityDashboardProps = {
   documents: KnowledgeDocument[];
   chunks: DocumentChunk[];
+  embeddingConfig: typeof embeddingConfig;
 };
 
 export function RagVisibilityDashboard({
   documents,
   chunks,
+  embeddingConfig,
 }: RagVisibilityDashboardProps) {
   const totalWords = documents.reduce(
     (sum, document) => sum + countWords(document.text),
@@ -42,6 +45,42 @@ export function RagVisibilityDashboard({
           This is what will be embedded next: each chunk keeps enough context to
           be useful, plus source metadata so future answers can cite evidence.
         </div>
+
+        <section className="mt-6 border border-[#ded4c4] bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
+                Embedding readiness
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-[#071a33]">
+                Reviewed chunks become vectors in the next phase
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#39465a]">
+                Human review comes before embedding. Once the chunks look
+                useful, the embedding model converts every approved chunk into a
+                fixed-length list of numbers for vector search.
+              </p>
+            </div>
+            <dl className="grid min-w-[260px] gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="border border-[#c7d1dc] bg-[#f8fbff] p-3">
+                <dt className="text-xs uppercase tracking-[0.14em] text-[#69778a]">
+                  Model
+                </dt>
+                <dd className="mt-1 font-mono text-sm font-semibold text-[#071a33]">
+                  {embeddingConfig.model}
+                </dd>
+              </div>
+              <div className="border border-[#c7d1dc] bg-[#f8fbff] p-3">
+                <dt className="text-xs uppercase tracking-[0.14em] text-[#69778a]">
+                  Vector size
+                </dt>
+                <dd className="mt-1 font-mono text-sm font-semibold text-[#071a33]">
+                  {`${embeddingConfig.dimensions} dimensions`}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </section>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr]">
           <section>
