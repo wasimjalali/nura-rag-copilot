@@ -3,6 +3,7 @@
 
 default_permissions = "nura_workspace"
 
+approval_policy = "on-failure"
 [shell_environment_policy]
 # Keep the command environment small and avoid forwarding common secret variables
 # into subprocesses that Codex starts.
@@ -50,3 +51,6 @@ command = "npx"
 args = ["shadcn@latest", "mcp"]
 startup_timeout_sec = 20
 tool_timeout_sec = 60
+
+[mcp_servers.shadcn.tools.get_project_registries]
+approval_mode = "approve"

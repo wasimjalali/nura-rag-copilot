@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { RagVisibilityDashboard } from "./rag-visibility-dashboard";
@@ -39,6 +39,67 @@ const embeddingStorageStatus = {
 } as const;
 
 describe("RagVisibilityDashboard", () => {
+  it("renders the Atlas Navy product shell with the expected workspace views", () => {
+    render(
+      <RagVisibilityDashboard
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        generateAnswerAction={async () => {}}
+        embeddingConfig={embeddingConfig}
+        embeddingStorageStatus={embeddingStorageStatus}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Nura Command Center" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Knowledge Base" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Retrieval Lab" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Evaluations" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("switches between premium workspace views", () => {
+    render(
+      <RagVisibilityDashboard
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        generateAnswerAction={async () => {}}
+        embeddingConfig={embeddingConfig}
+        embeddingStorageStatus={embeddingStorageStatus}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Knowledge Base" }));
+    expect(
+      screen.getByRole("heading", { name: "Knowledge Base" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retrieval Lab" }));
+    expect(
+      screen.getByRole("heading", { name: "Retrieval Lab" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Evaluations" }));
+    expect(
+      screen.getByRole("heading", { name: "Evaluation Studio" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      screen.getByRole("heading", { name: "Workspace Settings" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows documents and chunk preview details", () => {
     render(
       <RagVisibilityDashboard
@@ -52,11 +113,18 @@ describe("RagVisibilityDashboard", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "RAG visibility" }),
+      screen.getByRole("heading", { name: "Generate grounded answer" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("return_policy.md")).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: "Generate answer" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Knowledge Base" }));
+    expect(screen.getAllByText("return_policy.md").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("return_policy__chunk_001")).toBeInTheDocument();
-    expect(screen.getByText("Opened Products")).toBeInTheDocument();
+    expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retrieval Lab" }));
     expect(
       screen.getByText(/This is the evidence pool/),
     ).toBeInTheDocument();
@@ -71,12 +139,6 @@ describe("RagVisibilityDashboard", () => {
     expect(screen.getByText("1 chunk returned 3 dimensions.")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Store and embed chunks" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Generate grounded answer" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Generate answer" }),
     ).toBeInTheDocument();
   });
 
@@ -170,8 +232,8 @@ describe("RagVisibilityDashboard", () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText("[1]").length).toBeGreaterThan(0);
     expect(screen.getAllByText("[2]").length).toBeGreaterThan(0);
-    expect(screen.getByText("Score 0.812")).toBeInTheDocument();
-    expect(screen.getByText("Score 0.612")).toBeInTheDocument();
+    expect(screen.getAllByText("Score 0.812").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Score 0.612").length).toBeGreaterThan(0);
     expect(screen.getAllByText("return_policy.md").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
     expect(

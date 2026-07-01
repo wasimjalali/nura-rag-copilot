@@ -1,25 +1,82 @@
+"use client";
+
+import { useMemo, useState, type ReactNode } from "react";
+
 import type { DocumentChunk, KnowledgeDocument } from "@/lib/rag/types";
-import type { embeddingConfig } from "@/lib/rag/embedding-config";
+import { embeddingConfig as defaultEmbeddingConfig } from "@/lib/rag/embedding-config";
 import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
-import {
-  formatRetrievalScore,
-} from "@/lib/rag/retrieval";
+import { formatRetrievalScore } from "@/lib/rag/retrieval";
 import {
   summarizeEmbeddingStorageStatus,
   type EmbeddingStorageStatus,
 } from "@/lib/rag/storage-records";
+
+type WorkspaceView = "chat" | "knowledge" | "retrieval" | "evaluations" | "settings";
+
+type EmbeddingConfig = typeof defaultEmbeddingConfig;
 
 type RagVisibilityDashboardProps = {
   documents: KnowledgeDocument[];
   chunks: DocumentChunk[];
   embedAction: () => Promise<void>;
   generateAnswerAction: (formData: FormData) => Promise<void>;
-  embeddingConfig: typeof embeddingConfig;
+  embeddingConfig: EmbeddingConfig;
   embeddingStorageStatus: EmbeddingStorageStatus;
   groundedAnswer?: GroundedAnswerResponse | null;
   generateAnswerError?: string | null;
   submittedQuestion?: string;
 };
+
+type EvidenceItem = {
+  id: string;
+  label: string;
+  source: string;
+  section: string;
+  text: string;
+  scoreLabel: string;
+  rankLabel: string;
+};
+
+const NAV_ITEMS: Array<{
+  id: WorkspaceView;
+  label: string;
+  caption: string;
+}> = [
+  { id: "chat", label: "Chat", caption: "Grounded replies" },
+  { id: "knowledge", label: "Knowledge Base", caption: "Docs and chunks" },
+  { id: "retrieval", label: "Retrieval Lab", caption: "Vectors and scores" },
+  { id: "evaluations", label: "Evaluations", caption: "Manual checks" },
+  { id: "settings", label: "Settings", caption: "Models and policy" },
+];
+
+const SAMPLE_QUESTIONS = [
+  "Can customers return opened products?",
+  "Does express shipping change the cutoff?",
+  "What should support say when evidence is missing?",
+];
+
+const EVALUATION_ROWS = [
+  {
+    question: "Can customers return opened products?",
+    target: "Grounded answer with return-policy citation.",
+    status: "Ready",
+  },
+  {
+    question: "Can this supplement cure headaches?",
+    target: "Insufficient-evidence refusal.",
+    status: "Guardrail",
+  },
+  {
+    question: "Does express shipping change cutoff time?",
+    target: "Answer only from shipping and fulfillment chunks.",
+    status: "Ready",
+  },
+  {
+    question: "Which source supports the answer?",
+    target: "Show retrieved chunk, score, section, and citation label.",
+    status: "Visible",
+  },
+];
 
 export function RagVisibilityDashboard({
   documents,
@@ -32,305 +89,365 @@ export function RagVisibilityDashboard({
   generateAnswerError = null,
   submittedQuestion = "",
 }: RagVisibilityDashboardProps) {
-  const totalWords = documents.reduce(
-    (sum, document) => sum + countWords(document.text),
-    0,
-  );
-  const storageSummary = summarizeEmbeddingStorageStatus(
-    embeddingStorageStatus,
-  );
+  const [activeView, setActiveView] = useState<WorkspaceView>("chat");
+  const storageSummary = summarizeEmbeddingStorageStatus(embeddingStorageStatus);
   const retrievalReady = embeddingStorageStatus.embeddedChunks > 0;
+  const totalWords = useMemo(
+    () => documents.reduce((sum, document) => sum + countWords(document.text), 0),
+    [documents],
+  );
+  const evidenceItems = useMemo(
+    () => buildEvidenceItems(groundedAnswer, chunks),
+    [chunks, groundedAnswer],
+  );
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
+  const selectedEvidence =
+    evidenceItems.find((item) => item.id === selectedEvidenceId) ??
+    evidenceItems[0] ??
+    null;
 
   return (
-    <main className="min-h-screen bg-[#f7f1e5] text-[#111827]">
-      <section className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8">
-        <header className="flex flex-col gap-5 border-b border-[#d8cdbb] pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-              Project 01 · Step 7
-            </p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-[#071a33]">
-              RAG visibility
-            </h1>
-            <p className="mt-3 max-w-3xl text-base leading-7 text-[#39465a]">
-              Now the answer model returns structured paragraphs, with each
-              claim tied to retrieved evidence.
-            </p>
-          </div>
+    <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#d9e7ff_0,#f6f8fb_34%,#edf3f8_100%)] text-[#0b1727]">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-5 px-4 py-4 sm:px-6 lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:px-8 lg:py-6">
+        <WorkspaceSidebar
+          activeView={activeView}
+          documentsCount={documents.length}
+          embeddedChunks={embeddingStorageStatus.embeddedChunks}
+          navItems={NAV_ITEMS}
+          onSelectView={setActiveView}
+        />
 
-          <div className="grid grid-cols-3 gap-3 text-sm">
-            <Metric label="Documents" value={documents.length.toString()} />
-            <Metric label="Chunks" value={chunks.length.toString()} />
-            <Metric label="Words" value={totalWords.toLocaleString("en-US")} />
-          </div>
-        </header>
-
-        <div className="mt-6 border border-[#b8c4d4] bg-white p-4 text-sm leading-6 text-[#123c69] shadow-sm">
-          This is the evidence pool: each stored chunk keeps enough context to
-          be useful, plus source metadata so future answers can cite evidence.
-        </div>
-
-        <section className="mt-6 border border-[#ded4c4] bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-                Embedding readiness
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-[#071a33]">
-                Reviewed chunks and questions share one vector space
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#39465a]">
-                The embedding model converts both stored chunks and submitted
-                questions into fixed-length lists of numbers, so Convex can
-                compare meaning with vector search.
-              </p>
-            </div>
-            <dl className="grid min-w-[260px] gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <div className="border border-[#c7d1dc] bg-[#f8fbff] p-3">
-                <dt className="text-xs uppercase tracking-[0.14em] text-[#69778a]">
-                  Model
-                </dt>
-                <dd className="mt-1 font-mono text-sm font-semibold text-[#071a33]">
-                  {embeddingConfig.model}
-                </dd>
-              </div>
-              <div className="border border-[#c7d1dc] bg-[#f8fbff] p-3">
-                <dt className="text-xs uppercase tracking-[0.14em] text-[#69778a]">
-                  Vector size
-                </dt>
-                <dd className="mt-1 font-mono text-sm font-semibold text-[#071a33]">
-                  {`${embeddingConfig.dimensions} dimensions`}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </section>
-
-        <section className="mt-6 border border-[#c7d1dc] bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-                Storage status
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-[#071a33]">
-                Store reviewed chunks and generate real embeddings
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#39465a]">
-                This action sends the reviewed synthetic chunks to Convex,
-                calls Microsoft Foundry for embeddings, validates 1536
-                dimensions, and stores the vectors server-side.
-              </p>
-              <p className="mt-3 text-sm font-medium text-[#123c69]">
-                {storageSummary.lastRunMessage}
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[420px]">
-              <Metric
-                label="Preview"
-                value={`${chunks.length.toLocaleString("en-US")} chunks`}
+        <section className="min-w-0 animate-[nura-fade-up_500ms_ease-out] rounded-[28px] border border-[#d7e0ea] bg-white/82 p-3 shadow-[0_30px_90px_rgba(15,39,66,0.14)] backdrop-blur-xl sm:p-4">
+          <div className="grid min-h-[calc(100vh-56px)] gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#d7e0ea] bg-[#f8fbff]">
+              <WorkspaceHeader
+                activeView={activeView}
+                chunksCount={chunks.length}
+                documentsCount={documents.length}
+                retrievalReady={retrievalReady}
+                totalWords={totalWords}
               />
-              <Metric
-                label="Documents"
-                value={storageSummary.storedDocumentsLabel}
-              />
-              <Metric label="Chunks" value={storageSummary.storedChunksLabel} />
-              <Metric
-                label="Embeddings"
-                value={storageSummary.embeddedChunksLabel}
-              />
-              <div className="border border-[#ded4c4] bg-white p-3 shadow-sm sm:col-span-2">
-                <dt className="text-xs uppercase tracking-[0.14em] text-[#69778a]">
-                  Last run
-                </dt>
-                <dd className="mt-2 font-mono text-sm font-semibold text-[#071a33]">
-                  {storageSummary.lastRunLabel}
-                  <span className="ml-2 text-[#5f6d7f]">
-                    {storageSummary.lastEmbeddedAtLabel}
-                  </span>
-                </dd>
-              </div>
-              <form action={embedAction} className="sm:col-span-2">
-                <button
-                  className="w-full border border-[#123c69] bg-[#123c69] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0b2b4e]"
-                  type="submit"
-                >
-                  Store and embed chunks
-                </button>
-              </form>
-            </div>
-          </div>
-        </section>
 
-        <section className="mt-6 rounded-lg border border-[#b9c6d6] bg-white p-5 shadow-[0_18px_45px_rgba(7,26,51,0.08)]">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(380px,0.68fr)]">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-                Answer quality contract
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold text-[#071a33]">
-                Generate grounded answer
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[#39465a]">
-                The system retrieves evidence first, then asks the answer model
-                for validated paragraphs. Each citation is checked against the
-                retrieved chunks before the answer is shown.
-              </p>
-
-              <form action={generateAnswerAction} className="mt-5">
-                <label className="sr-only" htmlFor="retrieval-question">
-                  Question
-                </label>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <textarea
-                    className="min-h-24 flex-1 resize-none rounded-lg border border-[#c7d1dc] bg-[#fbfaf7] px-4 py-3 text-sm leading-6 text-[#071a33] outline-none transition placeholder:text-[#758295] focus:border-[#123c69] focus:bg-white focus:ring-2 focus:ring-[#123c69]/15 disabled:bg-[#f1eadf] disabled:text-[#69778a] sm:min-h-12"
-                    defaultValue={submittedQuestion}
-                    disabled={!retrievalReady}
-                    id="retrieval-question"
-                    name="question"
-                    placeholder="Can customers return opened products?"
-                    required
-                    rows={2}
+              <div className="min-h-[680px] p-3 sm:p-5">
+                {activeView === "chat" ? (
+                  <ChatWorkspace
+                    evidenceItems={evidenceItems}
+                    generateAnswerAction={generateAnswerAction}
+                    generateAnswerError={generateAnswerError}
+                    groundedAnswer={groundedAnswer}
+                    onSelectEvidence={setSelectedEvidenceId}
+                    ready={retrievalReady}
+                    selectedEvidenceId={selectedEvidence?.id ?? null}
+                    submittedQuestion={submittedQuestion}
                   />
-                  <button
-                    className="min-h-12 rounded-lg border border-[#123c69] bg-[#123c69] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0b2b4e] disabled:cursor-not-allowed disabled:border-[#9aa8b8] disabled:bg-[#9aa8b8]"
-                    disabled={!retrievalReady}
-                    type="submit"
-                  >
-                    Generate answer
-                  </button>
-                </div>
-              </form>
+                ) : null}
+
+                {activeView === "knowledge" ? (
+                  <KnowledgeWorkspace documents={documents} chunks={chunks} />
+                ) : null}
+
+                {activeView === "retrieval" ? (
+                  <RetrievalWorkspace
+                    chunks={chunks}
+                    embedAction={embedAction}
+                    embeddingConfig={embeddingConfig}
+                    storageSummary={storageSummary}
+                  />
+                ) : null}
+
+                {activeView === "evaluations" ? <EvaluationWorkspace /> : null}
+
+                {activeView === "settings" ? (
+                  <SettingsWorkspace
+                    embeddingConfig={embeddingConfig}
+                    storageSummary={storageSummary}
+                  />
+                ) : null}
+              </div>
             </div>
 
-            <GroundedAnswerPanel
-              error={generateAnswerError}
-              groundedAnswer={groundedAnswer}
-              ready={retrievalReady}
+            <EvidenceDrawer
+              activeView={activeView}
+              evidenceItems={evidenceItems}
+              onSelectEvidence={setSelectedEvidenceId}
+              selectedEvidence={selectedEvidence}
             />
           </div>
         </section>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr]">
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-[#071a33]">Documents</h2>
-              <span className="font-mono text-xs text-[#5f6d7f]">
-                {documents.length} files
-              </span>
-            </div>
-
-            {documents.length === 0 ? (
-              <EmptyState message="No synthetic documents found." />
-            ) : (
-              <div className="grid gap-3">
-                {documents.map((document) => (
-                  <article
-                    className="border border-[#ded4c4] bg-white p-4 shadow-sm"
-                    key={document.source}
-                  >
-                    <p className="font-mono text-xs font-semibold text-[#123c69]">
-                      {document.source}
-                    </p>
-                    <h3 className="mt-2 text-base font-semibold text-[#071a33]">
-                      {document.title}
-                    </h3>
-                    <dl className="mt-3 grid grid-cols-2 gap-3 text-xs text-[#4b5870]">
-                      <div>
-                        <dt className="uppercase tracking-[0.14em] text-[#69778a]">
-                          Sections
-                        </dt>
-                        <dd className="mt-1 font-mono font-semibold text-[#071a33]">
-                          {countSections(document.text)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="uppercase tracking-[0.14em] text-[#69778a]">
-                          Words
-                        </dt>
-                        <dd className="mt-1 font-mono font-semibold text-[#071a33]">
-                          {countWords(document.text)}
-                        </dd>
-                      </div>
-                    </dl>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-[#071a33]">Chunk preview</h2>
-              <span className="font-mono text-xs text-[#5f6d7f]">
-                {chunks.length} chunks
-              </span>
-            </div>
-
-            {chunks.length === 0 ? (
-              <EmptyState message="No chunks generated yet." />
-            ) : (
-              <div className="grid gap-3">
-                {chunks.map((chunk) => (
-                  <article
-                    className="border border-[#ded4c4] bg-white p-4 shadow-sm"
-                    key={chunk.id}
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="font-mono text-xs font-semibold text-[#123c69]">
-                        {chunk.id}
-                      </p>
-                      <p className="font-mono text-xs text-[#5f6d7f]">
-                        ~{chunk.tokenEstimate} tokens
-                      </p>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      <span className="border border-[#c7d1dc] bg-[#f8fbff] px-2 py-1 text-[#123c69]">
-                        {chunk.source}
-                      </span>
-                      <span className="border border-[#c7d1dc] bg-[#f8fbff] px-2 py-1 text-[#123c69]">
-                        {chunk.section}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-[#263244]">
-                      {chunk.text}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      </section>
+      </div>
     </main>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function WorkspaceSidebar({
+  activeView,
+  documentsCount,
+  embeddedChunks,
+  navItems,
+  onSelectView,
+}: {
+  activeView: WorkspaceView;
+  documentsCount: number;
+  embeddedChunks: number;
+  navItems: typeof NAV_ITEMS;
+  onSelectView: (view: WorkspaceView) => void;
+}) {
   return (
-    <div className="border border-[#ded4c4] bg-white p-3 shadow-sm">
-      <dt className="text-xs uppercase tracking-[0.14em] text-[#69778a]">
-        {label}
-      </dt>
-      <dd className="mt-2 font-mono text-xl font-semibold text-[#071a33]">
-        {value}
-      </dd>
+    <aside className="animate-[nura-fade-up_420ms_ease-out] rounded-[28px] border border-[#d7e0ea] bg-white/88 p-4 shadow-[0_24px_70px_rgba(15,39,66,0.12)] backdrop-blur-xl lg:sticky lg:top-6 lg:h-[calc(100vh-48px)]">
+      <div className="flex h-full flex-col gap-5">
+        <div className="flex items-center gap-3 rounded-2xl border border-[#d7e0ea] bg-[#f8fbff] p-3">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#0f2742] text-base font-bold text-white shadow-[0_14px_30px_rgba(15,39,66,0.24)]">
+            N
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#0b1727]">
+              Nura RAG
+            </p>
+            <p className="truncate text-xs font-medium text-[#617085]">
+              Support copilot
+            </p>
+          </div>
+        </div>
+
+        <nav className="grid gap-2" aria-label="Workspace">
+          {navItems.map((item) => {
+            const active = activeView === item.id;
+
+            return (
+              <button
+                aria-label={item.label}
+                aria-current={active ? "page" : undefined}
+                className={[
+                  "group rounded-2xl border px-3 py-3 text-left transition duration-200",
+                  "hover:-translate-y-0.5 hover:border-[#2f6fed] hover:bg-[#f8fbff] hover:shadow-[0_12px_30px_rgba(47,111,237,0.12)]",
+                  "focus:outline-none focus:ring-2 focus:ring-[#2f6fed]/30",
+                  active
+                    ? "border-[#2f6fed] bg-[#d9e7ff] text-[#123a75] shadow-[0_14px_34px_rgba(47,111,237,0.16)]"
+                    : "border-transparent bg-transparent text-[#617085]",
+                ].join(" ")}
+                key={item.id}
+                onClick={() => onSelectView(item.id)}
+                type="button"
+              >
+                <span className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold">{item.label}</span>
+                  <span
+                    className={[
+                      "h-2.5 w-2.5 rounded-full transition",
+                      active ? "bg-[#2f6fed]" : "bg-[#d7e0ea] group-hover:bg-[#2f6fed]",
+                    ].join(" ")}
+                  />
+                </span>
+                <span className="mt-1 block text-xs font-medium text-[#617085]">
+                  {item.caption}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="mt-auto grid gap-3">
+          <div className="rounded-2xl border border-[#d7e0ea] bg-[#f8fbff] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#617085]">
+              Corpus
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <MiniStat label="Docs" value={documentsCount.toString()} />
+              <MiniStat label="Vectors" value={embeddedChunks.toString()} />
+            </div>
+          </div>
+          <div className="rounded-2xl bg-[#0f2742] p-4 text-white shadow-[0_20px_50px_rgba(15,39,66,0.22)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#d9e7ff]">
+              Palette
+            </p>
+            <p className="mt-2 text-lg font-semibold">Atlas Navy</p>
+            <p className="mt-1 text-xs leading-5 text-[#d9e7ff]">
+              White workspace, navy authority, blue evidence focus.
+            </p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function WorkspaceHeader({
+  activeView,
+  chunksCount,
+  documentsCount,
+  retrievalReady,
+  totalWords,
+}: {
+  activeView: WorkspaceView;
+  chunksCount: number;
+  documentsCount: number;
+  retrievalReady: boolean;
+  totalWords: number;
+}) {
+  const title =
+    activeView === "chat"
+      ? "Nura Command Center"
+      : activeView === "knowledge"
+        ? "Knowledge Base"
+        : activeView === "retrieval"
+          ? "Retrieval Lab"
+          : activeView === "evaluations"
+            ? "Evaluation Studio"
+            : "Workspace Settings";
+
+  return (
+    <header className="border-b border-[#d7e0ea] bg-white px-5 py-5 sm:px-6">
+      <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-end 2xl:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2f6fed]">
+            Project 01 · Grounded support agent
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-[#0b1727] sm:text-4xl">
+            {title}
+          </h1>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-[#617085]">
+            Paragraph-level citations, visible retrieval, and a bright support
+            workspace built around source trust.
+          </p>
+        </div>
+
+        <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4 2xl:w-auto 2xl:min-w-[520px]">
+          <HeaderMetric label="Documents" value={documentsCount.toString()} />
+          <HeaderMetric label="Chunks" value={chunksCount.toString()} />
+          <HeaderMetric label="Words" value={totalWords.toLocaleString("en-US")} />
+          <HeaderMetric label="Status" value={retrievalReady ? "Ready" : "Setup"} />
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function ChatWorkspace({
+  evidenceItems,
+  generateAnswerAction,
+  generateAnswerError,
+  groundedAnswer,
+  onSelectEvidence,
+  ready,
+  selectedEvidenceId,
+  submittedQuestion,
+}: {
+  evidenceItems: EvidenceItem[];
+  generateAnswerAction: (formData: FormData) => Promise<void>;
+  generateAnswerError: string | null;
+  groundedAnswer: GroundedAnswerResponse | null;
+  onSelectEvidence: (id: string) => void;
+  ready: boolean;
+  selectedEvidenceId: string | null;
+  submittedQuestion: string;
+}) {
+  return (
+    <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
+      <section className="grid gap-4">
+        <div className="rounded-[24px] border border-[#d7e0ea] bg-white p-4 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_55px_rgba(15,39,66,0.10)] sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2f6fed]">
+                Live question
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold text-[#0b1727]">
+                Generate grounded answer
+              </h2>
+            </div>
+            <StatusPill tone={ready ? "success" : "muted"}>
+              {ready ? "Retrieval ready" : "Embedding setup"}
+            </StatusPill>
+          </div>
+
+          <form action={generateAnswerAction} className="mt-5">
+            <label className="sr-only" htmlFor="retrieval-question">
+              Question
+            </label>
+            <div className="rounded-[22px] border border-[#cbd7e6] bg-[#f8fbff] p-2 transition duration-200 focus-within:border-[#2f6fed] focus-within:bg-white focus-within:ring-4 focus-within:ring-[#2f6fed]/10">
+              <textarea
+                className="min-h-28 w-full resize-none rounded-2xl bg-transparent px-4 py-3 text-sm leading-6 text-[#0b1727] outline-none placeholder:text-[#8a98aa] disabled:text-[#617085]"
+                defaultValue={submittedQuestion}
+                disabled={!ready}
+                id="retrieval-question"
+                name="question"
+                placeholder="Can customers return opened products?"
+                required
+                rows={3}
+              />
+              <div className="flex flex-col gap-3 border-t border-[#d7e0ea] px-2 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap gap-2">
+                  {SAMPLE_QUESTIONS.map((question) => (
+                    <span
+                      className="rounded-full border border-[#d7e0ea] bg-white px-3 py-1 text-xs font-medium text-[#617085]"
+                      key={question}
+                    >
+                      {question}
+                    </span>
+                  ))}
+                </div>
+                <button
+                  className="rounded-2xl bg-[#0f2742] px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(15,39,66,0.22)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#123a75] hover:shadow-[0_20px_44px_rgba(18,58,117,0.24)] disabled:cursor-not-allowed disabled:bg-[#9aa8b8] disabled:shadow-none"
+                  disabled={!ready}
+                  type="submit"
+                >
+                  Generate answer
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <GroundedAnswerPanel
+          error={generateAnswerError}
+          evidenceItems={evidenceItems}
+          groundedAnswer={groundedAnswer}
+          onSelectEvidence={onSelectEvidence}
+          ready={ready}
+          selectedEvidenceId={selectedEvidenceId}
+        />
+      </section>
+
+      <section className="grid content-start gap-4">
+        <ProcessCard />
+        <div className="rounded-[24px] border border-[#d7e0ea] bg-white p-4 shadow-sm">
+          <p className="text-sm font-semibold text-[#0b1727]">Answer contract</p>
+          <div className="mt-4 grid gap-3">
+            {["Retrieve first", "Cite each paragraph", "Refuse missing evidence"].map(
+              (item) => (
+                <div
+                  className="flex items-center gap-3 rounded-2xl border border-[#d7e0ea] bg-[#f8fbff] px-3 py-2 text-sm font-medium text-[#617085]"
+                  key={item}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#2f6fed]" />
+                  {item}
+                </div>
+              ),
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
 
 function GroundedAnswerPanel({
   error,
+  evidenceItems,
   groundedAnswer,
+  onSelectEvidence,
   ready,
+  selectedEvidenceId,
 }: {
   error: string | null;
+  evidenceItems: EvidenceItem[];
   groundedAnswer: GroundedAnswerResponse | null;
+  onSelectEvidence: (id: string) => void;
   ready: boolean;
+  selectedEvidenceId: string | null;
 }) {
   if (!ready) {
     return (
-      <div className="rounded-lg border border-dashed border-[#c9bda9] bg-[#fbfaf7] p-5 text-sm font-medium text-[#5b4b38]">
+      <div className="rounded-[24px] border border-dashed border-[#b8c6d8] bg-white p-6 text-sm font-medium leading-6 text-[#617085]">
         Store and embed chunks before answer generation.
       </div>
     );
@@ -338,7 +455,7 @@ function GroundedAnswerPanel({
 
   if (error) {
     return (
-      <div className="rounded-lg border border-[#d7b6a5] bg-[#fff8f4] p-5 text-sm font-medium text-[#7a341d]">
+      <div className="rounded-[24px] border border-[#efc3b6] bg-[#fff8f4] p-6 text-sm font-semibold text-[#8a341c]">
         {error}
       </div>
     );
@@ -346,129 +463,558 @@ function GroundedAnswerPanel({
 
   if (!groundedAnswer) {
     return (
-      <div className="rounded-lg border border-dashed border-[#c9bda9] bg-[#fbfaf7] p-5 text-sm leading-6 text-[#4b5870]">
-        Ask a question to generate an answer and inspect the cited evidence.
+      <div className="rounded-[24px] border border-dashed border-[#b8c6d8] bg-white p-6">
+        <p className="text-sm font-semibold text-[#0b1727]">
+          Ask a question to generate an answer and inspect the cited evidence.
+        </p>
+        <p className="mt-2 text-sm leading-6 text-[#617085]">
+          Retrieved chunks will appear as source-backed citations in the answer
+          and as selectable evidence in the right panel.
+        </p>
       </div>
     );
   }
 
-  const citedResults = groundedAnswer.retrieval.results;
-
   return (
-    <div className="grid gap-4">
-      <section className="rounded-lg border border-[#b9c6d6] bg-[#fbfdff] p-4 shadow-sm">
-        <div className="flex flex-col gap-2 border-b border-[#d8cdbb] pb-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-[#071a33]">
-              Grounded answer
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <p className="font-mono text-xs text-[#5f6d7f]">
-                {groundedAnswer.answerModel}
+    <article className="animate-[nura-fade-up_420ms_ease-out] rounded-[24px] border border-[#cbd7e6] bg-white p-5 shadow-[0_24px_60px_rgba(15,39,66,0.10)]">
+      <div className="flex flex-col gap-3 border-b border-[#d7e0ea] pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-[#0b1727]">Grounded answer</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <StatusPill tone="blue">{groundedAnswer.answerModel}</StatusPill>
+            <StatusPill tone={groundedAnswer.structuredAnswer.answerType === "grounded" ? "success" : "warning"}>
+              {formatAnswerType(groundedAnswer.structuredAnswer.answerType)}
+            </StatusPill>
+          </div>
+        </div>
+        <p className="font-mono text-xs font-semibold text-[#617085]">
+          {evidenceItems.length} cited chunks
+        </p>
+      </div>
+
+      <div className="mt-5 grid gap-5">
+        {groundedAnswer.structuredAnswer.paragraphs.map((paragraph, paragraphIndex) => (
+          <section
+            className="rounded-2xl bg-[#f8fbff] p-4 transition duration-200 hover:bg-[#f3f8ff]"
+            key={`${paragraph.text}-${paragraphIndex}`}
+          >
+            <p className="text-base leading-8 text-[#1f2a3a]">{paragraph.text}</p>
+            {paragraph.citations.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {paragraph.citations.map((citation) => {
+                  const evidenceItem = evidenceItems.find(
+                    (item) => item.label === citation,
+                  );
+
+                  return (
+                    <button
+                      className={[
+                        "rounded-full border px-3 py-1.5 font-mono text-xs font-semibold transition duration-200",
+                        "hover:-translate-y-0.5 hover:border-[#2f6fed] hover:shadow-[0_10px_24px_rgba(47,111,237,0.16)]",
+                        selectedEvidenceId === evidenceItem?.id
+                          ? "border-[#2f6fed] bg-[#d9e7ff] text-[#123a75]"
+                          : "border-[#cbd7e6] bg-white text-[#123a75]",
+                      ].join(" ")}
+                      disabled={!evidenceItem}
+                      key={`${paragraphIndex}-${citation}`}
+                      onClick={() => evidenceItem && onSelectEvidence(evidenceItem.id)}
+                      type="button"
+                    >
+                      {citation}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function EvidenceDrawer({
+  activeView,
+  evidenceItems,
+  onSelectEvidence,
+  selectedEvidence,
+}: {
+  activeView: WorkspaceView;
+  evidenceItems: EvidenceItem[];
+  onSelectEvidence: (id: string) => void;
+  selectedEvidence: EvidenceItem | null;
+}) {
+  return (
+    <aside className="rounded-[22px] border border-[#d7e0ea] bg-white p-4 shadow-sm xl:sticky xl:top-8 xl:max-h-[calc(100vh-64px)] xl:overflow-y-auto">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[#0b1727]">Evidence</p>
+          <p className="mt-1 text-xs font-medium text-[#617085]">
+            {activeView === "chat" ? "Answer citations" : "Corpus preview"}
+          </p>
+        </div>
+        <StatusPill tone="blue">{evidenceItems.length} sources</StatusPill>
+      </div>
+
+      {selectedEvidence ? (
+        <section className="mt-4 rounded-[20px] border border-[#2f6fed] bg-[#d9e7ff] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-xs font-semibold text-[#123a75]">
+                {selectedEvidence.label}
               </p>
-              <span className="rounded border border-[#c7d1dc] bg-white px-2 py-1 text-xs font-semibold text-[#123c69]">
-                {formatAnswerType(groundedAnswer.structuredAnswer.answerType)}
+              <h2 className="mt-2 text-lg font-semibold text-[#0b1727]">
+                {selectedEvidence.source}
+              </h2>
+            </div>
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-3 py-1 font-mono text-xs font-semibold text-[#123a75]">
+              {selectedEvidence.scoreLabel}
+            </span>
+          </div>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#123a75]">
+            {selectedEvidence.section}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-[#1f2a3a]">
+            {selectedEvidence.text}
+          </p>
+        </section>
+      ) : (
+        <div className="mt-4 rounded-[20px] border border-dashed border-[#b8c6d8] bg-[#f8fbff] p-4 text-sm text-[#617085]">
+          No evidence is available yet.
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3">
+        {evidenceItems.map((item) => (
+          <button
+            className={[
+              "rounded-[18px] border p-3 text-left transition duration-200",
+              "hover:-translate-y-0.5 hover:border-[#2f6fed] hover:bg-[#f8fbff] hover:shadow-[0_14px_30px_rgba(47,111,237,0.12)]",
+              selectedEvidence?.id === item.id
+                ? "border-[#2f6fed] bg-[#f8fbff]"
+                : "border-[#d7e0ea] bg-white",
+            ].join(" ")}
+            key={item.id}
+            onClick={() => onSelectEvidence(item.id)}
+            type="button"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-mono text-xs font-semibold text-[#123a75]">
+                {item.rankLabel}
+              </span>
+              <span className="shrink-0 whitespace-nowrap font-mono text-xs font-semibold text-[#617085]">
+                {item.scoreLabel}
               </span>
             </div>
+            <p className="mt-2 text-sm font-semibold text-[#0b1727]">{item.source}</p>
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#617085]">
+              {item.text}
+            </p>
+          </button>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function KnowledgeWorkspace({
+  documents,
+  chunks,
+}: {
+  documents: KnowledgeDocument[];
+  chunks: DocumentChunk[];
+}) {
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2f6fed]">
+              Synthetic sources
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold text-[#0b1727]">
+              Source documents
+            </h2>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {citedResults.map((result) => (
-              <span
-                className="rounded border border-[#c7d1dc] bg-white px-2 py-1 font-mono text-xs font-semibold text-[#123c69]"
-                key={result.chunkId}
-              >
-                {result.citationLabel}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="mt-4 grid gap-4">
-          {groundedAnswer.structuredAnswer.paragraphs.map(
-            (paragraph, paragraphIndex) => (
-              <p
-                className="text-base leading-7 text-[#1f2a3a]"
-                key={`${paragraph.text}-${paragraphIndex}`}
-              >
-                <span>{paragraph.text}</span>
-                {paragraph.citations.length > 0 ? (
-                  <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
-                    {paragraph.citations.map((citation) => (
-                      <span
-                        className="rounded border border-[#c7d1dc] bg-white px-2 py-0.5 font-mono text-xs font-semibold text-[#123c69]"
-                        key={`${paragraphIndex}-${citation}`}
-                      >
-                        {citation}
-                      </span>
-                    ))}
-                  </span>
-                ) : null}
-              </p>
-            ),
-          )}
+          <StatusPill tone="blue">{documents.length} files</StatusPill>
         </div>
       </section>
 
-      <section>
-        <div className="flex flex-col gap-2 border-b border-[#d8cdbb] pb-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-[#071a33]">
-              Cited evidence
-            </p>
-            <p className="mt-1 text-xs text-[#5f6d7f]">
-              {groundedAnswer.retrieval.embeddingModel} ·{" "}
-              {groundedAnswer.retrieval.embeddingDimensions} dims
-            </p>
-          </div>
-          <span className="font-mono text-xs text-[#5f6d7f]">
-            {citedResults.length} chunks
-          </span>
-        </div>
-
-        <div className="mt-4 grid gap-3">
-          {citedResults.map((result) => (
+      {documents.length === 0 ? (
+        <EmptyState message="No synthetic documents found." />
+      ) : (
+        <section className="grid gap-4 lg:grid-cols-2">
+          {documents.map((document) => (
             <article
-              className="rounded-lg border border-[#d5dfeb] bg-[#fbfdff] p-4 shadow-sm"
-              key={result.chunkId}
+              className="group rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#2f6fed] hover:shadow-[0_24px_60px_rgba(15,39,66,0.10)]"
+              key={document.source}
             >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="font-mono text-xs font-semibold text-[#123c69]">
-                    {result.citationLabel} · Rank {result.rank} ·{" "}
-                    {result.chunkId}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded border border-[#c7d1dc] bg-white px-2 py-1 text-[#123c69]">
-                      {result.source}
-                    </span>
-                    <span className="rounded border border-[#c7d1dc] bg-white px-2 py-1 text-[#123c69]">
-                      {result.section}
-                    </span>
-                  </div>
-                </div>
-                <p className="font-mono text-xs font-semibold text-[#071a33]">
-                  Score {formatRetrievalScore(result.score)}
-                </p>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-[#263244]">
-                {result.text}
+              <p className="font-mono text-xs font-semibold text-[#123a75]">
+                {document.source}
               </p>
+              <h3 className="mt-2 text-lg font-semibold text-[#0b1727]">
+                {document.title}
+              </h3>
+              <dl className="mt-4 grid grid-cols-2 gap-3">
+                <MiniStat label="Sections" value={countSections(document.text).toString()} />
+                <MiniStat label="Words" value={countWords(document.text).toString()} />
+              </dl>
             </article>
           ))}
+        </section>
+      )}
+
+      <section className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-[#0b1727]">Chunk preview</h2>
+          <span className="font-mono text-xs font-semibold text-[#617085]">
+            {chunks.length} chunks
+          </span>
         </div>
+        {chunks.length === 0 ? (
+          <EmptyState message="No chunks generated yet." />
+        ) : (
+          <div className="grid max-h-[640px] gap-3 overflow-y-auto pr-1">
+            {chunks.map((chunk) => (
+              <article
+                className="rounded-[20px] border border-[#d7e0ea] bg-[#f8fbff] p-4 transition duration-200 hover:border-[#2f6fed] hover:bg-white"
+                key={chunk.id}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="font-mono text-xs font-semibold text-[#123a75]">
+                    {chunk.id}
+                  </p>
+                  <p className="font-mono text-xs text-[#617085]">
+                    ~{chunk.tokenEstimate} tokens
+                  </p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border border-[#cbd7e6] bg-white px-2.5 py-1 text-[#123a75]">
+                    {chunk.source}
+                  </span>
+                  <span className="rounded-full border border-[#cbd7e6] bg-white px-2.5 py-1 text-[#123a75]">
+                    {chunk.section}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-[#263244]">
+                  {chunk.text}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </div>
+  );
+}
+
+function RetrievalWorkspace({
+  chunks,
+  embedAction,
+  embeddingConfig,
+  storageSummary,
+}: {
+  chunks: DocumentChunk[];
+  embedAction: () => Promise<void>;
+  embeddingConfig: EmbeddingConfig;
+  storageSummary: ReturnType<typeof summarizeEmbeddingStorageStatus>;
+}) {
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2f6fed]">
+          RAG visibility
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-[#0b1727]">
+          Evidence pool
+        </h2>
+        <div className="mt-4 rounded-2xl border border-[#cbd7e6] bg-[#f8fbff] p-4 text-sm leading-6 text-[#123a75]">
+          This is the evidence pool: each stored chunk keeps enough context to
+          be useful, plus source metadata so future answers can cite evidence.
+        </div>
+      </section>
+
+      <section className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <article className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2f6fed]">
+            Embedding readiness
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-[#0b1727]">
+            Reviewed chunks and questions share one vector space
+          </h3>
+          <p className="mt-3 text-sm leading-6 text-[#617085]">
+            The embedding model converts both stored chunks and submitted
+            questions into fixed-length lists of numbers, so Convex can compare
+            meaning with vector search.
+          </p>
+          <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+            <MiniStat label="Model" value={embeddingConfig.model} />
+            <MiniStat
+              label="Vector size"
+              value={`${embeddingConfig.dimensions} dimensions`}
+            />
+          </dl>
+        </article>
+
+        <article className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2f6fed]">
+            Storage status
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-[#0b1727]">
+            Store reviewed chunks and generate real embeddings
+          </h3>
+          <p className="mt-3 text-sm font-medium text-[#123a75]">
+            {storageSummary.lastRunMessage}
+          </p>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <MiniStat label="Preview" value={`${chunks.length} chunks`} />
+            <MiniStat label="Documents" value={storageSummary.storedDocumentsLabel} />
+            <MiniStat label="Chunks" value={storageSummary.storedChunksLabel} />
+            <MiniStat label="Embeddings" value={storageSummary.embeddedChunksLabel} />
+          </div>
+          <form action={embedAction} className="mt-4">
+            <button
+              className="w-full rounded-2xl bg-[#0f2742] px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(15,39,66,0.22)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#123a75]"
+              type="submit"
+            >
+              Store and embed chunks
+            </button>
+          </form>
+        </article>
+      </section>
+    </div>
+  );
+}
+
+function EvaluationWorkspace() {
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2f6fed]">
+          Quality loop
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-[#0b1727]">
+          Manual evaluation set
+        </h2>
+      </section>
+
+      <section className="grid gap-4 2xl:grid-cols-2">
+        {EVALUATION_ROWS.map((row) => (
+          <article
+            className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#2f6fed] hover:shadow-[0_24px_60px_rgba(15,39,66,0.10)]"
+            key={row.question}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <h3 className="text-base font-semibold leading-6 text-[#0b1727]">
+                {row.question}
+              </h3>
+              <StatusPill tone={row.status === "Guardrail" ? "warning" : "blue"}>
+                {row.status}
+              </StatusPill>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-[#617085]">{row.target}</p>
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function SettingsWorkspace({
+  embeddingConfig,
+  storageSummary,
+}: {
+  embeddingConfig: EmbeddingConfig;
+  storageSummary: ReturnType<typeof summarizeEmbeddingStorageStatus>;
+}) {
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#2f6fed]">
+          Runtime
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-[#0b1727]">
+          Model and policy settings
+        </h2>
+      </section>
+
+      <section className="grid gap-4 2xl:grid-cols-2">
+        <SettingsCard
+          rows={[
+            ["Answer model", "gpt-5.4-mini"],
+            ["Embedding model", embeddingConfig.model],
+            ["Vector dimensions", `${embeddingConfig.dimensions}`],
+          ]}
+          title="Models"
+        />
+        <SettingsCard
+          rows={[
+            ["Database", "Convex"],
+            ["Stored documents", storageSummary.storedDocumentsLabel],
+            ["Stored chunks", storageSummary.storedChunksLabel],
+          ]}
+          title="Storage"
+        />
+        <SettingsCard
+          rows={[
+            ["Synthetic docs only", "Enabled"],
+            ["Missing evidence refusal", "Enabled"],
+            ["Paragraph citations", "Required"],
+          ]}
+          title="Guardrails"
+        />
+        <SettingsCard
+          rows={[
+            ["Theme", "Atlas Navy"],
+            ["Background", "White and blue mist"],
+            ["Accent", "#2f6fed"],
+          ]}
+          title="Interface"
+        />
+      </section>
+    </div>
+  );
+}
+
+function ProcessCard() {
+  return (
+    <div className="rounded-[24px] border border-[#d7e0ea] bg-white p-4 shadow-sm">
+      <p className="text-sm font-semibold text-[#0b1727]">RAG run</p>
+      <div className="mt-4 grid gap-3">
+        {[
+          ["01", "Embed question"],
+          ["02", "Rank chunks"],
+          ["03", "Draft answer"],
+          ["04", "Validate citations"],
+        ].map(([step, label]) => (
+          <div className="flex items-center gap-3" key={step}>
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-[#d9e7ff] font-mono text-xs font-semibold text-[#123a75]">
+              {step}
+            </span>
+            <span className="text-sm font-medium text-[#617085]">{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsCard({
+  rows,
+  title,
+}: {
+  rows: Array<[string, string]>;
+  title: string;
+}) {
+  return (
+    <article className="rounded-[24px] border border-[#d7e0ea] bg-white p-5 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#2f6fed]">
+      <h3 className="text-lg font-semibold text-[#0b1727]">{title}</h3>
+      <dl className="mt-4 grid gap-3">
+        {rows.map(([label, value]) => (
+          <div
+            className="flex items-center justify-between gap-4 rounded-2xl bg-[#f8fbff] px-4 py-3"
+            key={label}
+          >
+            <dt className="text-sm font-medium text-[#617085]">{label}</dt>
+            <dd className="text-right font-mono text-xs font-semibold text-[#123a75]">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </article>
+  );
+}
+
+function HeaderMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-[#d7e0ea] bg-[#f8fbff] px-4 py-3">
+      <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[#617085]">
+        {label}
+      </dt>
+      <dd className="mt-1 truncate font-mono text-lg font-semibold text-[#0b1727]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-[#d7e0ea] bg-white px-3 py-3">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#617085]">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words font-mono text-sm font-semibold text-[#0b1727]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function StatusPill({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone: "blue" | "success" | "warning" | "muted";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "border-[#b9e2d5] bg-[#e7f7f1] text-[#0f6f56]"
+      : tone === "warning"
+        ? "border-[#f1d6a7] bg-[#fff7e8] text-[#9a5a00]"
+        : tone === "muted"
+          ? "border-[#d7e0ea] bg-[#f8fbff] text-[#617085]"
+          : "border-[#c4d8ff] bg-[#d9e7ff] text-[#123a75]";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${toneClass}`}
+    >
+      {children}
+    </span>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="border border-dashed border-[#c9bda9] bg-white/70 p-6 text-sm text-[#4b5870]">
+    <div className="rounded-[24px] border border-dashed border-[#b8c6d8] bg-white p-6 text-sm text-[#617085]">
       {message}
     </div>
   );
 }
 
-function formatAnswerType(answerType: GroundedAnswerResponse["structuredAnswer"]["answerType"]) {
+function buildEvidenceItems(
+  groundedAnswer: GroundedAnswerResponse | null,
+  chunks: DocumentChunk[],
+): EvidenceItem[] {
+  if (groundedAnswer) {
+    return groundedAnswer.retrieval.results.map((result) => ({
+      id: result.chunkId,
+      label: result.citationLabel,
+      source: result.source,
+      section: result.section,
+      text: result.text,
+      scoreLabel: `Score ${formatRetrievalScore(result.score)}`,
+      rankLabel: `Rank ${result.rank}`,
+    }));
+  }
+
+  return chunks.slice(0, 5).map((chunk, index) => ({
+    id: chunk.id,
+    label: `[${index + 1}]`,
+    source: chunk.source,
+    section: chunk.section,
+    text: chunk.text,
+    scoreLabel: "Preview",
+    rankLabel: `Chunk ${index + 1}`,
+  }));
+}
+
+function formatAnswerType(
+  answerType: GroundedAnswerResponse["structuredAnswer"]["answerType"],
+) {
   return answerType === "grounded" ? "grounded" : "insufficient evidence";
 }
 
