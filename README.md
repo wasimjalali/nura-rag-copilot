@@ -4,13 +4,18 @@ Nura RAG Copilot is a learning-first RAG support assistant for a synthetic suppl
 
 ## Current Phase
 
-Foundation:
+RAG visibility:
 
 - Next.js app scaffold
 - Convex backend location
 - Project rules in `AGENTS.md`
 - Environment variable example
 - Foundation learning note
+- Ten synthetic markdown documents
+- Document loader
+- Heading-aware chunking
+- Chunk preview dashboard
+- Tests for loading, chunking, and preview rendering
 
 ## Planned RAG Pipeline
 
