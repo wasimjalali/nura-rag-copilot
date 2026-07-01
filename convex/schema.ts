@@ -16,14 +16,18 @@ export default defineSchema({
     section: v.string(),
     text: v.string(),
     tokenEstimate: v.number(),
-    embedding: v.optional(v.array(v.number())),
+    embedding: v.optional(v.array(v.float64())),
     embeddingModel: v.optional(v.string()),
     embeddingDimensions: v.optional(v.number()),
     embeddedAt: v.optional(v.number()),
     updatedAt: v.number(),
   })
     .index("by_chunk_id", ["chunkId"])
-    .index("by_source", ["source"]),
+    .index("by_source", ["source"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+    }),
 
   embeddingRuns: defineTable({
     status: v.union(

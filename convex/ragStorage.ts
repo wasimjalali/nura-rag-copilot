@@ -38,7 +38,7 @@ const documentChunkInput = v.object({
 
 const embeddingInput = v.object({
   chunkId: v.string(),
-  embedding: v.array(v.number()),
+  embedding: v.array(v.float64()),
   embeddingModel: v.string(),
   embeddingDimensions: v.number(),
 });

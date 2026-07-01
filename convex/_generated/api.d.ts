@@ -8,7 +8,9 @@
  * @module
  */
 
+import type * as embeddingProvider from "../embeddingProvider.js";
 import type * as ragEmbedding from "../ragEmbedding.js";
+import type * as ragRetrieval from "../ragRetrieval.js";
 import type * as ragStorage from "../ragStorage.js";
 
 import type {
@@ -18,7 +20,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  embeddingProvider: typeof embeddingProvider;
   ragEmbedding: typeof ragEmbedding;
+  ragRetrieval: typeof ragRetrieval;
   ragStorage: typeof ragStorage;
 }>;
 
