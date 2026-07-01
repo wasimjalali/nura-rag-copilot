@@ -47,14 +47,14 @@ export function RagVisibilityDashboard({
         <header className="flex flex-col gap-5 border-b border-[#d8cdbb] pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-              Project 01 · Step 2
+              Project 01 · Step 5
             </p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight text-[#071a33]">
               RAG visibility
             </h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-[#39465a]">
-              Before embeddings, we inspect the knowledge base and the exact
-              chunks that will become searchable meaning vectors.
+              Now we inspect the exact chunks Convex retrieves before the
+              answer model writes anything.
             </p>
           </div>
 
@@ -66,7 +66,7 @@ export function RagVisibilityDashboard({
         </header>
 
         <div className="mt-6 border border-[#b8c4d4] bg-white p-4 text-sm leading-6 text-[#123c69] shadow-sm">
-          This is what will be embedded next: each chunk keeps enough context to
+          This is the evidence pool: each stored chunk keeps enough context to
           be useful, plus source metadata so future answers can cite evidence.
         </div>
 
@@ -77,12 +77,12 @@ export function RagVisibilityDashboard({
                 Embedding readiness
               </p>
               <h2 className="mt-2 text-xl font-semibold text-[#071a33]">
-                Reviewed chunks become vectors in the next phase
+                Reviewed chunks and questions share one vector space
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[#39465a]">
-                Human review comes before embedding. Once the chunks look
-                useful, the embedding model converts every approved chunk into a
-                fixed-length list of numbers for vector search.
+                The embedding model converts both stored chunks and submitted
+                questions into fixed-length lists of numbers, so Convex can
+                compare meaning with vector search.
               </p>
             </div>
             <dl className="grid min-w-[260px] gap-3 sm:grid-cols-2 lg:grid-cols-1">

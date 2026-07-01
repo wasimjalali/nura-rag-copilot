@@ -1,4 +1,4 @@
-import { fetchQuery } from "convex/nextjs";
+import { fetchAction, fetchQuery } from "convex/nextjs";
 
 import { RagVisibilityDashboard } from "@/components/rag-visibility-dashboard";
 import { api } from "../../convex/_generated/api";

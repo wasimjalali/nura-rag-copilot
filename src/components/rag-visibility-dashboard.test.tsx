@@ -58,12 +58,12 @@ describe("RagVisibilityDashboard", () => {
     expect(screen.getByText("return_policy__chunk_001")).toBeInTheDocument();
     expect(screen.getByText("Opened Products")).toBeInTheDocument();
     expect(
-      screen.getByText(/This is what will be embedded next/),
+      screen.getByText(/This is the evidence pool/),
     ).toBeInTheDocument();
     expect(screen.getByText("text-embedding-3-small")).toBeInTheDocument();
     expect(screen.getByText("1536 dimensions")).toBeInTheDocument();
     expect(
-      screen.getByText(/Human review comes before embedding/),
+      screen.getByText(/The embedding model converts both stored chunks/),
     ).toBeInTheDocument();
     expect(screen.getByText("Storage status")).toBeInTheDocument();
     expect(screen.getByText("31 stored")).toBeInTheDocument();

@@ -4,7 +4,7 @@ Nura RAG Copilot is a learning-first RAG support assistant for a synthetic suppl
 
 ## Current Phase
 
-Real embedding storage:
+Retrieval visibility:
 
 - Next.js app scaffold
 - Convex backend location
@@ -23,13 +23,17 @@ Real embedding storage:
 - Real Microsoft Foundry embedding action
 - 1536-dimension validation before vectors are stored
 - Storage status panel in the dashboard
+- Convex vector index over stored chunk embeddings
+- Real question embedding through Microsoft Foundry
+- Retrieval action that returns ranked chunks and scores
+- Premium dashboard panel for inspecting retrieved evidence
 
 ## Planned RAG Pipeline
 
 1. Synthetic documents
 2. Chunking and chunk preview
 3. Embeddings
-4. Convex vector search
+4. Convex vector search and retrieval visibility
 5. Grounded answer generation
 6. Citations and refusals
 7. Manual evals
