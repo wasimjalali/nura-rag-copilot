@@ -46,33 +46,43 @@ export function readAnswerConfig(): AnswerConfig {
   };
 }
 
+const ANSWER_TIMEOUT_MS = 60000;
+
 export async function requestChatCompletion(
   config: AnswerConfig,
   messages: ChatMessage[],
 ) {
-  const response = await fetch(toChatCompletionsUrl(config.endpoint), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "api-key": config.apiKey,
-    },
-    body: JSON.stringify({
-      model: config.deployment,
-      messages,
-      temperature: 0.2,
-      max_completion_tokens: 500,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ANSWER_TIMEOUT_MS);
 
-  const body = (await response
-    .json()
-    .catch(() => ({}))) as ChatCompletionResponse;
+  let body: ChatCompletionResponse;
 
-  if (!response.ok) {
-    throw new Error(
-      body.error?.message ??
-        `Chat completion request failed with status ${response.status}.`,
-    );
+  try {
+    const response = await fetch(toChatCompletionsUrl(config.endpoint), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": config.apiKey,
+      },
+      body: JSON.stringify({
+        model: config.deployment,
+        messages,
+        temperature: 0.2,
+        max_completion_tokens: 500,
+      }),
+      signal: controller.signal,
+    });
+
+    body = (await response.json().catch(() => ({}))) as ChatCompletionResponse;
+
+    if (!response.ok) {
+      throw new Error(
+        body.error?.message ??
+          `Chat completion request failed with status ${response.status}.`,
+      );
+    }
+  } finally {
+    clearTimeout(timeout);
   }
 
   const content = body.choices?.[0]?.message?.content;

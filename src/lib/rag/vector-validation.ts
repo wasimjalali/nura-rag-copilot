@@ -10,6 +10,16 @@ export function validateEmbeddingDimensions(vector: number[]) {
     };
   }
 
+  const badIndex = vector.findIndex((value) => !Number.isFinite(value));
+  if (badIndex !== -1) {
+    return {
+      ok: false,
+      actualDimensions: vector.length,
+      expectedDimensions: EMBEDDING_DIMENSIONS,
+      message: `Vector contains a non-finite value at index ${badIndex}.`,
+    };
+  }
+
   return {
     ok: true,
     actualDimensions: vector.length,

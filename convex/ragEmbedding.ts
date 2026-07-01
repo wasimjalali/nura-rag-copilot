@@ -43,6 +43,15 @@ export const embedReviewedChunks = action({
     message: v.string(),
   }),
   handler: async (ctx, args): Promise<EmbedReviewedChunksResult> => {
+    // upsertPreviewRecords reconciles storage to exactly match this payload, so
+    // an empty payload would delete the whole corpus. That only happens if the
+    // document load failed upstream, so refuse loudly instead of wiping data.
+    if (args.chunks.length === 0) {
+      throw new Error(
+        "Refusing to embed an empty corpus. No documents were loaded.",
+      );
+    }
+
     const startedAt = Date.now();
     const runId = await ctx.runMutation(internal.ragStorage.startEmbeddingRun, {
       documents: args.documents.length,

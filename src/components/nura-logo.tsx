@@ -21,8 +21,7 @@ export function NuraMark({
       viewBox="0 0 64 64"
       fill="none"
       className={className}
-      role="img"
-      aria-label="Nura"
+      aria-hidden="true"
     >
       <path
         d="M32 32 L18 18 M32 32 L48 16 M32 32 L46 44 M32 32 L18 46"

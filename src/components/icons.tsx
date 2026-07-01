@@ -38,32 +38,11 @@ export function KnowledgeIcon(props: IconProps) {
   );
 }
 
-export function RetrievalIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <circle cx="11" cy="11" r="6" />
-      <path d="M11 8.5v5M8.5 11h5" />
-      <path d="m20 20-3.6-3.6" />
-    </Icon>
-  );
-}
-
 export function EvaluationsIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M12 3.5 5 6v5.4c0 4 2.9 6.9 7 9.1 4.1-2.2 7-5.1 7-9.1V6Z" />
       <path d="m9.2 11.6 2 2 3.6-3.8" />
-    </Icon>
-  );
-}
-
-export function SettingsIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M5 7.5h9M17 7.5h2" />
-      <circle cx="15.5" cy="7.5" r="2" />
-      <path d="M5 16.5h2M10 16.5h9" />
-      <circle cx="8.5" cy="16.5" r="2" />
     </Icon>
   );
 }
@@ -133,6 +112,16 @@ export function LayersIcon(props: IconProps) {
     <Icon {...props}>
       <path d="m12 3 8 4.5-8 4.5-8-4.5Z" />
       <path d="m4 12 8 4.5 8-4.5" />
+    </Icon>
+  );
+}
+
+export function UploadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 15V4" />
+      <path d="m7.5 8.5 4.5-4.5 4.5 4.5" />
+      <path d="M5 15v3.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V15" />
     </Icon>
   );
 }

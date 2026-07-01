@@ -12,6 +12,21 @@ export function estimateTokenCount(text: string) {
 export function chunkDocuments(
   documents: KnowledgeDocument[],
 ): DocumentChunk[] {
+  const seenSlugs = new Map<string, string>();
+
+  for (const document of documents) {
+    const slug = sourceSlug(document.source);
+    const existingSource = seenSlugs.get(slug);
+
+    if (existingSource) {
+      throw new Error(
+        `Duplicate source slug "${slug}" from "${existingSource}" and "${document.source}".`,
+      );
+    }
+
+    seenSlugs.set(slug, document.source);
+  }
+
   return documents.flatMap((document) => chunkDocument(document));
 }
 
@@ -33,14 +48,25 @@ function chunkDocument(document: KnowledgeDocument): DocumentChunk[] {
   });
 }
 
+// H2 (`## `) is the only structural unit; H3+ and setext headings are
+// intentionally folded into their parent H2 section.
 function splitBySecondLevelHeading(markdown: string) {
   const lines = markdown.split(/\r?\n/);
   const sections: Array<{ heading: string; body: string }> = [];
-  let currentHeading = "Overview";
+  let currentHeading = "(Introduction)";
   let currentLines: string[] = [];
+  let inFence = false;
 
   for (const line of lines) {
-    if (line.startsWith("## ")) {
+    const isFenceDelimiter =
+      line.trim().startsWith("```") || line.trim().startsWith("~~~");
+
+    if (isFenceDelimiter) {
+      inFence = !inFence;
+      currentLines.push(line);
+    } else if (inFence) {
+      currentLines.push(line);
+    } else if (line.startsWith("## ")) {
       pushSection();
       currentHeading = line.replace(/^##\s+/, "").trim();
       currentLines = [];
@@ -116,7 +142,11 @@ function splitLongParagraph(paragraph: string) {
 }
 
 function sourceSlug(source: string) {
-  return source.replace(/\.md$/, "").replace(/[^a-z0-9]+/g, "_");
+  return source
+    .replace(/\.(md|markdown|txt)$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function wordCount(text: string) {

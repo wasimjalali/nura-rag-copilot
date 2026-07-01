@@ -42,7 +42,7 @@ Chat is **single-shot, not streaming**: the composer is a `<form>` whose action 
 
 ### The two-layer RAG code
 
-- `convex/` holds the real backend logic: `ragStorage.ts` (status query + storage mutations), `ragEmbedding.ts` (embed chunks), `ragRetrieval.ts` (embed a question, run vector search), `ragAnswer.ts` (prompt `gpt-5.4-mini`, validate citations, insufficient-evidence fallback). `answerProvider.ts` / `embeddingProvider.ts` wrap Foundry. Vector index `by_embedding` (1536 dims) is defined in `convex/schema.ts`.
+- `convex/` holds the real backend logic: `ragStorage.ts` (status query + storage mutations; `upsertPreviewRecords` full-reconciles storage to the incoming corpus, deleting orphaned chunks and clearing a chunk's embedding when its text changes), `ragEmbedding.ts` (embed chunks; refuses an empty corpus), `ragRetrieval.ts` (embed a question, run vector search, drop matches below `MIN_RELEVANCE_SCORE = 0.35` so a question with no relevant evidence deterministically refuses), `ragAnswer.ts` (prompt `gpt-5.4-mini`, validate citations, insufficient-evidence fallback). `answerProvider.ts` / `embeddingProvider.ts` wrap Foundry (batched embeddings, `AbortController` timeouts). Vector index `by_embedding` (1536 dims) is defined in `convex/schema.ts`.
 - `src/lib/rag/` holds the client/server-shared pieces: document loading, chunking, embedding config, retrieval formatting, storage-record shaping, and the **shared TypeScript types** (`grounded-answer.ts`, `types.ts`). Note `convex/groundedAnswer.ts` (logic) and `src/lib/rag/grounded-answer.ts` (types) are distinct files.
 
 ### Citation model (non-obvious)
@@ -51,12 +51,12 @@ Chat is **single-shot, not streaming**: the composer is a `<form>` whose action 
 
 ### UI and design system
 
-`src/components/rag-visibility-dashboard.tsx` is the whole workspace (nav rail, chat, sources panel, chunk dialog, and the knowledge/retrieval/evaluations/settings views). `src/components/nura-logo.tsx` is the Constellation mark; `src/components/icons.tsx` is the hand-rolled icon set; `src/app/icon.svg` is the favicon.
+`src/components/rag-visibility-dashboard.tsx` is the whole workspace (nav rail, chat, sources panel, chunk dialog, and the knowledge and evaluations views). The nav is deliberately lean (Chat, Knowledge base, Evaluations); the earlier Retrieval and Settings explainer views were removed. The Knowledge base accepts pasted text and `.md`/`.markdown`/`.txt`/`.pdf` uploads (`src/lib/rag/extract-upload.ts`, PDF via `unpdf`) and auto-embeds on add. The Evaluations view runs the manual battery live against the real RAG loop (`runEvalsAction` in `src/app/eval-actions.ts`, deterministic assertions in `src/lib/eval/run-eval.ts`) and reports real pass/fail. `src/components/nura-logo.tsx` is the Constellation mark; `src/components/icons.tsx` is the hand-rolled icon set; `src/app/icon.svg` is the favicon.
 
 Design tokens are role-named (surface, ink, accent, border, semantic) in `src/app/globals.css`. **Cascade gotcha:** component classes must live in `@layer components` and base resets in `@layer base` so Tailwind utilities can override them; unlayered rules beat every utility (this caused a real double-border and a stuck `hidden` bug). Dialogs render through a portal to `document.body` so they can never become flex items. Fonts are self-hosted via `next/font` in `src/app/layout.tsx` (`--font-inter`, `--font-jetbrains-mono`).
 
 ### Where things live
 
 - `content/synthetic-docs/` - the only data source (synthetic support docs)
-- `src/lib/eval/manual-eval-set.ts` - the manual evaluation battery rendered in the Evaluations view
+- `src/lib/eval/manual-eval-set.ts` - the eval battery (questions + machine-checkable `assertion`s) the Evaluations view runs live; `src/lib/eval/run-eval.ts` holds the pure assertion logic
 - `docs/` - dated build journal (learning notes, design specs, plans); point-in-time records, not living docs

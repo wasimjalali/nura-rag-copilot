@@ -36,6 +36,28 @@ describe("embedding readiness", () => {
     });
   });
 
+  it("rejects vectors containing non-finite elements", () => {
+    const vector = Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0.1);
+    vector[42] = Number.NaN;
+
+    expect(validateEmbeddingDimensions(vector)).toEqual({
+      ok: false,
+      actualDimensions: EMBEDDING_DIMENSIONS,
+      expectedDimensions: EMBEDDING_DIMENSIONS,
+      message: "Vector contains a non-finite value at index 42.",
+    });
+
+    const infiniteVector = Array.from({ length: EMBEDDING_DIMENSIONS }, () => 0.1);
+    infiniteVector[7] = Number.POSITIVE_INFINITY;
+
+    expect(validateEmbeddingDimensions(infiniteVector)).toEqual({
+      ok: false,
+      actualDimensions: EMBEDDING_DIMENSIONS,
+      expectedDimensions: EMBEDDING_DIMENSIONS,
+      message: "Vector contains a non-finite value at index 7.",
+    });
+  });
+
   it("reports readiness when the deployment name is configured", () => {
     expect(isEmbeddingReady({ AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "" })).toEqual({
       ok: false,

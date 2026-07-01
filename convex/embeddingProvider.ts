@@ -42,6 +42,11 @@ export function readEmbeddingConfig(): EmbeddingConfig {
   };
 }
 
+// Foundry caps how many inputs one embeddings request accepts, so send the
+// inputs in fixed-size batches and concatenate the results in input order.
+const EMBEDDING_BATCH_SIZE = 96;
+const EMBEDDING_TIMEOUT_MS = 60000;
+
 export async function requestEmbeddings(
   config: EmbeddingConfig,
   input: string[],
@@ -50,27 +55,58 @@ export async function requestEmbeddings(
     return [];
   }
 
-  const response = await fetch(toEmbeddingsUrl(config.endpoint), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "api-key": config.apiKey,
-    },
-    body: JSON.stringify({
-      model: config.deployment,
-      input,
-      dimensions: EMBEDDING_DIMENSIONS,
-      encoding_format: "float",
-    }),
-  });
+  const vectors: number[][] = [];
 
-  const body = (await response.json().catch(() => ({}))) as EmbeddingResponse;
+  for (let start = 0; start < input.length; start += EMBEDDING_BATCH_SIZE) {
+    const batch = input.slice(start, start + EMBEDDING_BATCH_SIZE);
+    const batchVectors = await requestEmbeddingBatch(config, batch);
 
-  if (!response.ok) {
-    throw new Error(
-      body.error?.message ??
-        `Embedding request failed with status ${response.status}.`,
-    );
+    // A short or padded batch would silently misalign every downstream
+    // chunk-to-vector pairing, so fail loud if the count does not match.
+    if (batchVectors.length !== batch.length) {
+      throw new Error(
+        `Embedding batch returned ${batchVectors.length} vectors for ${batch.length} inputs.`,
+      );
+    }
+
+    vectors.push(...batchVectors);
+  }
+
+  return vectors;
+}
+
+async function requestEmbeddingBatch(config: EmbeddingConfig, input: string[]) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
+
+  let body: EmbeddingResponse;
+
+  try {
+    const response = await fetch(toEmbeddingsUrl(config.endpoint), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": config.apiKey,
+      },
+      body: JSON.stringify({
+        model: config.deployment,
+        input,
+        dimensions: EMBEDDING_DIMENSIONS,
+        encoding_format: "float",
+      }),
+      signal: controller.signal,
+    });
+
+    body = (await response.json().catch(() => ({}))) as EmbeddingResponse;
+
+    if (!response.ok) {
+      throw new Error(
+        body.error?.message ??
+          `Embedding request failed with status ${response.status}.`,
+      );
+    }
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!Array.isArray(body.data)) {

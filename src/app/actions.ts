@@ -9,11 +9,14 @@ import { redirect } from "next/navigation";
 
 import { api } from "../../convex/_generated/api";
 import { chunkDocuments } from "@/lib/rag/chunk";
+import { extractUploadedText } from "@/lib/rag/extract-upload";
 import { loadSyntheticDocuments } from "@/lib/rag/load-documents";
 import {
   toDocumentChunkRecords,
   toSourceDocumentRecords,
 } from "@/lib/rag/storage-records";
+
+const MAX_QUESTION_LENGTH = 2000;
 
 const SYNTHETIC_DOCS_DIR = path.join(process.cwd(), "content", "synthetic-docs");
 
@@ -28,22 +31,26 @@ export async function embedSyntheticDocumentsAction() {
   const documents = await loadSyntheticDocuments();
   const chunks = chunkDocuments(documents);
 
-  await fetchAction(api.ragEmbedding.embedReviewedChunks, {
-    documents: toSourceDocumentRecords(documents),
-    chunks: toDocumentChunkRecords(chunks),
-  });
-
-  revalidatePath("/");
-}
-
-export async function retrieveSyntheticChunksAction(formData: FormData) {
-  const question = String(formData.get("question") ?? "").trim();
-
-  if (!question) {
-    redirect("/?retrievalError=empty");
+  try {
+    await fetchAction(api.ragEmbedding.embedReviewedChunks, {
+      documents: toSourceDocumentRecords(documents),
+      chunks: toDocumentChunkRecords(chunks),
+    });
+  } catch (error) {
+    // Surface a friendly message to the caller (the Knowledge view catches it
+    // and shows it inline) instead of an unhandled server-action rejection.
+    // Keep the "already in progress" signal, which is actionable (retry soon),
+    // but do not forward raw upstream error text to the client.
+    const inProgress =
+      error instanceof Error && error.message.includes("already in progress");
+    throw new Error(
+      inProgress
+        ? "An embedding run is already in progress. Try again in a moment."
+        : "Embedding failed. Check the model connection and try again.",
+    );
   }
 
-  redirect(`/?question=${encodeURIComponent(question)}`);
+  revalidatePath("/");
 }
 
 export async function generateGroundedAnswerAction(formData: FormData) {
@@ -53,17 +60,29 @@ export async function generateGroundedAnswerAction(formData: FormData) {
     redirect("/?answerError=empty");
   }
 
+  if (question.length > MAX_QUESTION_LENGTH) {
+    redirect("/?answerError=too_long");
+  }
+
   redirect(`/?question=${encodeURIComponent(question)}`);
 }
 
 /**
- * Add a synthetic support document. Writes a sanitized markdown file into the
- * synthetic-docs directory so it is picked up on the next load, chunked
- * automatically, and made embeddable. Synthetic documents only.
+ * Add a synthetic support document, either pasted (title + body) or uploaded
+ * (file). Writes a sanitized markdown file into the synthetic-docs directory,
+ * then re-embeds the corpus so the new document is immediately queryable.
+ * Synthetic documents only.
  */
 export async function addSyntheticDocumentAction(formData: FormData) {
-  const title = String(formData.get("title") ?? "").trim();
-  const body = String(formData.get("body") ?? "").trim();
+  let title = String(formData.get("title") ?? "").trim();
+  let body = String(formData.get("body") ?? "").trim();
+
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    const extracted = await extractUploadedText(file);
+    title = title || extracted.title;
+    body = extracted.markdown.trim();
+  }
 
   if (!title || !body) {
     throw new Error("A title and document text are both required.");
@@ -101,7 +120,23 @@ export async function addSyntheticDocumentAction(formData: FormData) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {
       throw new Error("A document with a similar title already exists.");
     }
-    throw error;
+    // Do not forward the raw fs error (it includes the absolute file path).
+    throw new Error("Could not save the document. Please try again.");
+  }
+
+  try {
+    const documents = await loadSyntheticDocuments();
+    const chunks = chunkDocuments(documents);
+
+    await fetchAction(api.ragEmbedding.embedReviewedChunks, {
+      documents: toSourceDocumentRecords(documents),
+      chunks: toDocumentChunkRecords(chunks),
+    });
+  } catch {
+    revalidatePath("/");
+    throw new Error(
+      "The document was added but embedding failed. Store and embed the corpus again from the Knowledge view.",
+    );
   }
 
   revalidatePath("/");
