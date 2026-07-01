@@ -1,4 +1,6 @@
 .DS_Store
+
+# Local secrets. Keep example files committed, but never commit real values.
 .env
 .env.*
 !.env.example

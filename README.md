@@ -45,6 +45,8 @@ npx convex dev
 
 Run it once to log in, configure the project, and generate Convex TypeScript bindings.
 
+For Foundry and Convex secret setup, use the commands in `docs/setup/01-convex-foundry-secrets.md`.
+
 ## Verification
 
 ```bash

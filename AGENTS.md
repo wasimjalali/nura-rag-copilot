@@ -17,6 +17,7 @@ Nura RAG Copilot is Project 01 in Wasim's AI Specialist to Agentic AI Engineer l
 - Use synthetic documents only.
 - Do not use employer documents, customer data, confidential files, Nature Heart IP, or real customer data.
 - Do not store secrets in the repo.
+- Do not read `.env`, `.env.*`, `.env.local`, `.env.convex`, or any file that may contain API keys. If a secret value is needed, ask Wasim to run a command locally instead.
 - Do not provide medical advice.
 - Do not claim that supplements cure, treat, diagnose, or prevent disease.
 

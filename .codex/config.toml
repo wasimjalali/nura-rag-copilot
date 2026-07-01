@@ -1,0 +1,46 @@
+# Project-local Codex guardrails.
+# These apply in trusted project sessions after Codex reloads this project config.
+
+default_permissions = "nura_workspace"
+
+[shell_environment_policy]
+# Keep the command environment small and avoid forwarding common secret variables
+# into subprocesses that Codex starts.
+inherit = "core"
+ignore_default_excludes = false
+exclude = [
+  "AZURE_*",
+  "OPENAI_*",
+  "CONVEX_*",
+  "*KEY*",
+  "*SECRET*",
+  "*TOKEN*",
+]
+
+[permissions.nura_workspace]
+description = "Workspace edit access with local secret files denied."
+extends = ":workspace"
+
+[permissions.nura_workspace.filesystem]
+glob_scan_max_depth = 4
+
+[permissions.nura_workspace.filesystem.":workspace_roots"]
+"." = "write"
+".env" = "deny"
+".env.local" = "deny"
+".env.development" = "deny"
+".env.development.local" = "deny"
+".env.test" = "deny"
+".env.test.local" = "deny"
+".env.production" = "deny"
+".env.production.local" = "deny"
+".env.convex" = "deny"
+"**/.env" = "deny"
+"**/.env.local" = "deny"
+"**/.env.development" = "deny"
+"**/.env.development.local" = "deny"
+"**/.env.test" = "deny"
+"**/.env.test.local" = "deny"
+"**/.env.production" = "deny"
+"**/.env.production.local" = "deny"
+"**/.env.convex" = "deny"
