@@ -44,3 +44,9 @@ glob_scan_max_depth = 4
 "**/.env.production" = "deny"
 "**/.env.production.local" = "deny"
 "**/.env.convex" = "deny"
+
+[mcp_servers.shadcn]
+command = "npx"
+args = ["shadcn@latest", "mcp"]
+startup_timeout_sec = 20
+tool_timeout_sec = 60
