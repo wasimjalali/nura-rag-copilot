@@ -17,6 +17,13 @@ import {
 
 const SYNTHETIC_DOCS_DIR = path.join(process.cwd(), "content", "synthetic-docs");
 
+// SECURITY: the mutating actions below (embed, add-document) are intentionally
+// unauthenticated. This is a local, single-user learning tool where the person
+// running it is the only actor. Before ANY multi-user or public deployment,
+// gate these behind an auth check: they write files and trigger paid model
+// calls, and added documents flow into the RAG prompt as retrieved evidence
+// (indirect prompt-injection surface, mitigated in the answer system prompt).
+
 export async function embedSyntheticDocumentsAction() {
   const documents = await loadSyntheticDocuments();
   const chunks = chunkDocuments(documents);
