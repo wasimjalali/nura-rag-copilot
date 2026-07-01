@@ -2,6 +2,7 @@
 
 import { fetchAction } from "convex/nextjs";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { api } from "../../convex/_generated/api";
 import { chunkDocuments } from "@/lib/rag/chunk";
@@ -21,4 +22,14 @@ export async function embedSyntheticDocumentsAction() {
   });
 
   revalidatePath("/");
+}
+
+export async function retrieveSyntheticChunksAction(formData: FormData) {
+  const question = String(formData.get("question") ?? "").trim();
+
+  if (!question) {
+    redirect("/?retrievalError=empty");
+  }
+
+  redirect(`/?question=${encodeURIComponent(question)}`);
 }

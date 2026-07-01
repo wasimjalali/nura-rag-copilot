@@ -47,6 +47,7 @@ describe("RagVisibilityDashboard", () => {
         embedAction={async () => {}}
         embeddingConfig={embeddingConfig}
         embeddingStorageStatus={embeddingStorageStatus}
+        retrieveAction={async () => {}}
       />,
     );
 
@@ -71,5 +72,71 @@ describe("RagVisibilityDashboard", () => {
     expect(
       screen.getByRole("button", { name: "Store and embed chunks" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Retrieve evidence" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Retrieve chunks" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a setup state before embeddings are stored", () => {
+    render(
+      <RagVisibilityDashboard
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        embeddingConfig={embeddingConfig}
+        embeddingStorageStatus={{
+          ...embeddingStorageStatus,
+          embeddedChunks: 0,
+        }}
+        retrieveAction={async () => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText("Store and embed chunks before retrieval."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows ranked retrieved evidence with score and source metadata", () => {
+    render(
+      <RagVisibilityDashboard
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        embeddingConfig={embeddingConfig}
+        embeddingStorageStatus={embeddingStorageStatus}
+        retrieval={{
+          question: "Can customers return opened products?",
+          embeddingModel: "text-embedding-3-small",
+          embeddingDimensions: 1536,
+          results: [
+            {
+              rank: 1,
+              score: 0.81234,
+              chunkId: "return_policy__chunk_001",
+              source: "return_policy.md",
+              section: "Opened Products",
+              text: "Customers can return opened products within the policy window.",
+              tokenEstimate: 11,
+            },
+          ],
+        }}
+        retrieveAction={async () => {}}
+        submittedQuestion="Can customers return opened products?"
+      />,
+    );
+
+    expect(screen.getByText("Retrieved evidence")).toBeInTheDocument();
+    expect(screen.getByText("Score 0.812")).toBeInTheDocument();
+    expect(screen.getAllByText("return_policy.md").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        "Customers can return opened products within the policy window.",
+      ).length,
+    ).toBeGreaterThan(0);
   });
 });
