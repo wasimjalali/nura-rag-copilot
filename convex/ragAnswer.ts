@@ -8,11 +8,24 @@ import {
 } from "./answerProvider";
 import { toSafeErrorMessage } from "./embeddingProvider";
 import {
-  INSUFFICIENT_EVIDENCE_ANSWER,
   addCitationLabels,
+  buildInsufficientEvidenceAnswer,
   buildGroundedAnswerMessages,
+  parseStructuredGroundedAnswer,
+  structuredAnswerToText,
   type CitedRetrievalResult,
+  type StructuredGroundedAnswer,
 } from "./groundedAnswer";
+
+const answerType = v.union(
+  v.literal("grounded"),
+  v.literal("insufficient_evidence"),
+);
+
+const groundedAnswerParagraph = v.object({
+  text: v.string(),
+  citations: v.array(v.string()),
+});
 
 const citedRetrievalResult = v.object({
   rank: v.number(),
@@ -44,6 +57,7 @@ type GroundedAnswerResponse = {
   question: string;
   answer: string;
   answerModel: string;
+  structuredAnswer: StructuredGroundedAnswer;
   retrieval: {
     embeddingModel: string;
     embeddingDimensions: number;
@@ -60,6 +74,10 @@ export const generateGroundedAnswer = action({
     question: v.string(),
     answer: v.string(),
     answerModel: v.string(),
+    structuredAnswer: v.object({
+      answerType,
+      paragraphs: v.array(groundedAnswerParagraph),
+    }),
     retrieval: v.object({
       embeddingModel: v.string(),
       embeddingDimensions: v.number(),
@@ -79,10 +97,13 @@ export const generateGroundedAnswer = action({
       const citedResults = addCitationLabels(retrieval.results);
 
       if (citedResults.length === 0) {
+        const structuredAnswer = buildInsufficientEvidenceAnswer();
+
         return {
           question: retrieval.question,
-          answer: INSUFFICIENT_EVIDENCE_ANSWER,
+          answer: structuredAnswerToText(structuredAnswer),
           answerModel: config.deployment,
+          structuredAnswer,
           retrieval: {
             embeddingModel: retrieval.embeddingModel,
             embeddingDimensions: retrieval.embeddingDimensions,
@@ -95,12 +116,17 @@ export const generateGroundedAnswer = action({
         retrieval.question,
         citedResults,
       );
-      const answer = await requestChatCompletion(config, messages);
+      const rawAnswer = await requestChatCompletion(config, messages);
+      const structuredAnswer = parseStructuredGroundedAnswer(
+        rawAnswer,
+        citedResults,
+      );
 
       return {
         question: retrieval.question,
-        answer,
+        answer: structuredAnswerToText(structuredAnswer),
         answerModel: config.deployment,
+        structuredAnswer,
         retrieval: {
           embeddingModel: retrieval.embeddingModel,
           embeddingDimensions: retrieval.embeddingDimensions,

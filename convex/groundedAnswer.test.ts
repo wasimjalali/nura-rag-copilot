@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   INSUFFICIENT_EVIDENCE_ANSWER,
   addCitationLabels,
+  buildInsufficientEvidenceAnswer,
   buildGroundedAnswerMessages,
   formatEvidenceForPrompt,
+  parseStructuredGroundedAnswer,
+  structuredAnswerToText,
 } from "./groundedAnswer";
 
 const retrievalResults = [
@@ -65,6 +68,10 @@ describe("grounded answer helpers", () => {
       ),
     });
     expect(messages[0].content).toContain("Do not invent policies");
+    expect(messages[0].content).toContain("Return only JSON");
+    expect(messages[0].content).toContain("answerType");
+    expect(messages[0].content).toContain("paragraphs");
+    expect(messages[0].content).toContain("citations");
     expect(messages[1].content).toContain(
       "Question: Can a customer return an opened product?",
     );
@@ -76,6 +83,118 @@ describe("grounded answer helpers", () => {
   it("provides a stable insufficient-evidence answer", () => {
     expect(INSUFFICIENT_EVIDENCE_ANSWER).toBe(
       "I do not have enough retrieved evidence to answer that question.",
+    );
+  });
+
+  it("builds a structured insufficient-evidence answer", () => {
+    expect(buildInsufficientEvidenceAnswer()).toEqual({
+      answerType: "insufficient_evidence",
+      paragraphs: [
+        {
+          text: INSUFFICIENT_EVIDENCE_ANSWER,
+          citations: [],
+        },
+      ],
+    });
+  });
+
+  it("parses valid structured grounded JSON", () => {
+    const parsed = parseStructuredGroundedAnswer(
+      JSON.stringify({
+        answerType: "grounded",
+        paragraphs: [
+          {
+            text: "Opened products may be returned within 30 days.",
+            citations: ["[1]"],
+          },
+        ],
+      }),
+      addCitationLabels(retrievalResults),
+    );
+
+    expect(parsed).toEqual({
+      answerType: "grounded",
+      paragraphs: [
+        {
+          text: "Opened products may be returned within 30 days.",
+          citations: ["[1]"],
+        },
+      ],
+    });
+  });
+
+  it("removes duplicate paragraph citations while preserving order", () => {
+    const parsed = parseStructuredGroundedAnswer(
+      JSON.stringify({
+        answerType: "grounded",
+        paragraphs: [
+          {
+            text: "Opened products may be returned within 30 days.",
+            citations: ["[1]", "[1]", "[2]"],
+          },
+        ],
+      }),
+      addCitationLabels(retrievalResults),
+    );
+
+    expect(parsed.paragraphs[0].citations).toEqual(["[1]", "[2]"]);
+  });
+
+  it("falls back when JSON is invalid", () => {
+    const parsed = parseStructuredGroundedAnswer(
+      "not json",
+      addCitationLabels(retrievalResults),
+    );
+
+    expect(parsed).toEqual(buildInsufficientEvidenceAnswer());
+  });
+
+  it("falls back when grounded paragraphs omit citations", () => {
+    const parsed = parseStructuredGroundedAnswer(
+      JSON.stringify({
+        answerType: "grounded",
+        paragraphs: [{ text: "Opened products may be returned.", citations: [] }],
+      }),
+      addCitationLabels(retrievalResults),
+    );
+
+    expect(parsed).toEqual(buildInsufficientEvidenceAnswer());
+  });
+
+  it("falls back when citations were not retrieved", () => {
+    const parsed = parseStructuredGroundedAnswer(
+      JSON.stringify({
+        answerType: "grounded",
+        paragraphs: [
+          { text: "Opened products may be returned.", citations: ["[9]"] },
+        ],
+      }),
+      addCitationLabels(retrievalResults),
+    );
+
+    expect(parsed).toEqual(buildInsufficientEvidenceAnswer());
+  });
+
+  it("converts structured paragraphs back to readable text", () => {
+    expect(
+      structuredAnswerToText({
+        answerType: "grounded",
+        paragraphs: [
+          {
+            text: "Opened products may be returned within 30 days.",
+            citations: ["[1]"],
+          },
+          {
+            text: "Orders outside the window are not eligible.",
+            citations: ["[2]"],
+          },
+        ],
+      }),
+    ).toBe(
+      [
+        "Opened products may be returned within 30 days. [1]",
+        "Orders outside the window are not eligible. [2]",
+      ].join("\n\n"),
     );
   });
 });

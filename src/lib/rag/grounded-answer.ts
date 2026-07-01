@@ -9,10 +9,21 @@ export type CitedRetrievalResult = {
   citationLabel: string;
 };
 
+export type GroundedAnswerParagraph = {
+  text: string;
+  citations: string[];
+};
+
+export type StructuredGroundedAnswer = {
+  answerType: "grounded" | "insufficient_evidence";
+  paragraphs: GroundedAnswerParagraph[];
+};
+
 export type GroundedAnswerResponse = {
   question: string;
   answer: string;
   answerModel: string;
+  structuredAnswer: StructuredGroundedAnswer;
   retrieval: {
     embeddingModel: string;
     embeddingDimensions: number;

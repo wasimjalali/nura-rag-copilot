@@ -112,8 +112,21 @@ describe("RagVisibilityDashboard", () => {
         groundedAnswer={{
           question: "Can customers return opened products?",
           answer:
-            "Yes. Opened products may be returned within 30 days when the customer tried the product and is unsatisfied. [1]",
+            "Opened products may be returned within 30 days. [1]\n\nOrders outside the policy window are not eligible. [2]",
           answerModel: "gpt-5.4-mini",
+          structuredAnswer: {
+            answerType: "grounded",
+            paragraphs: [
+              {
+                text: "Opened products may be returned within 30 days.",
+                citations: ["[1]"],
+              },
+              {
+                text: "Orders outside the policy window are not eligible.",
+                citations: ["[2]"],
+              },
+            ],
+          },
           retrieval: {
             embeddingModel: "text-embedding-3-small",
             embeddingDimensions: 1536,
@@ -128,6 +141,16 @@ describe("RagVisibilityDashboard", () => {
                 tokenEstimate: 11,
                 citationLabel: "[1]",
               },
+              {
+                rank: 2,
+                score: 0.61234,
+                chunkId: "return_policy__chunk_002",
+                source: "return_policy.md",
+                section: "Non-Returnable Orders",
+                text: "Orders outside the policy window are not eligible.",
+                tokenEstimate: 8,
+                citationLabel: "[2]",
+              },
             ],
           },
         }}
@@ -139,12 +162,16 @@ describe("RagVisibilityDashboard", () => {
     expect(screen.getByText("Grounded answer")).toBeInTheDocument();
     expect(screen.getByText("gpt-5.4-mini")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Yes. Opened products may be returned within 30 days when the customer tried the product and is unsatisfied. [1]",
-      ),
+      screen.getByText("Opened products may be returned within 30 days."),
     ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Orders outside the policy window are not eligible.")
+        .length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText("[1]").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("[2]").length).toBeGreaterThan(0);
     expect(screen.getByText("Score 0.812")).toBeInTheDocument();
+    expect(screen.getByText("Score 0.612")).toBeInTheDocument();
     expect(screen.getAllByText("return_policy.md").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
     expect(
@@ -152,6 +179,47 @@ describe("RagVisibilityDashboard", () => {
         "Customers can return opened products within the policy window.",
       ).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("shows an insufficient-evidence answer without paragraph citations", () => {
+    render(
+      <RagVisibilityDashboard
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        generateAnswerAction={async () => {}}
+        embeddingConfig={embeddingConfig}
+        embeddingStorageStatus={embeddingStorageStatus}
+        groundedAnswer={{
+          question: "Can this cure headaches?",
+          answer: "I do not have enough retrieved evidence to answer that question.",
+          answerModel: "gpt-5.4-mini",
+          structuredAnswer: {
+            answerType: "insufficient_evidence",
+            paragraphs: [
+              {
+                text: "I do not have enough retrieved evidence to answer that question.",
+                citations: [],
+              },
+            ],
+          },
+          retrieval: {
+            embeddingModel: "text-embedding-3-small",
+            embeddingDimensions: 1536,
+            results: [],
+          },
+        }}
+        generateAnswerError={null}
+        submittedQuestion="Can this cure headaches?"
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "I do not have enough retrieved evidence to answer that question.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("insufficient evidence")).toBeInTheDocument();
   });
 
   it("shows an answer error state", () => {

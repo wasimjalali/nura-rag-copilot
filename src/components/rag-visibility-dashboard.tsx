@@ -47,14 +47,14 @@ export function RagVisibilityDashboard({
         <header className="flex flex-col gap-5 border-b border-[#d8cdbb] pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-              Project 01 · Step 6
+              Project 01 · Step 7
             </p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight text-[#071a33]">
               RAG visibility
             </h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-[#39465a]">
-              Now the answer model writes from retrieved evidence, while the
-              supporting chunks stay visible for inspection.
+              Now the answer model returns structured paragraphs, with each
+              claim tied to retrieved evidence.
             </p>
           </div>
 
@@ -166,15 +166,15 @@ export function RagVisibilityDashboard({
           <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(380px,0.68fr)]">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-                Grounded generation
+                Answer quality contract
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-[#071a33]">
                 Generate grounded answer
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[#39465a]">
                 The system retrieves evidence first, then asks the answer model
-                to respond only from those chunks. The citations below keep the
-                answer traceable.
+                for validated paragraphs. Each citation is checked against the
+                retrieved chunks before the answer is shown.
               </p>
 
               <form action={generateAnswerAction} className="mt-5">
@@ -362,9 +362,14 @@ function GroundedAnswerPanel({
             <p className="text-sm font-semibold text-[#071a33]">
               Grounded answer
             </p>
-            <p className="mt-1 font-mono text-xs text-[#5f6d7f]">
-              {groundedAnswer.answerModel}
-            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <p className="font-mono text-xs text-[#5f6d7f]">
+                {groundedAnswer.answerModel}
+              </p>
+              <span className="rounded border border-[#c7d1dc] bg-white px-2 py-1 text-xs font-semibold text-[#123c69]">
+                {formatAnswerType(groundedAnswer.structuredAnswer.answerType)}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {citedResults.map((result) => (
@@ -377,9 +382,30 @@ function GroundedAnswerPanel({
             ))}
           </div>
         </div>
-        <p className="mt-4 text-base leading-7 text-[#1f2a3a]">
-          {groundedAnswer.answer}
-        </p>
+        <div className="mt-4 grid gap-4">
+          {groundedAnswer.structuredAnswer.paragraphs.map(
+            (paragraph, paragraphIndex) => (
+              <p
+                className="text-base leading-7 text-[#1f2a3a]"
+                key={`${paragraph.text}-${paragraphIndex}`}
+              >
+                <span>{paragraph.text}</span>
+                {paragraph.citations.length > 0 ? (
+                  <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
+                    {paragraph.citations.map((citation) => (
+                      <span
+                        className="rounded border border-[#c7d1dc] bg-white px-2 py-0.5 font-mono text-xs font-semibold text-[#123c69]"
+                        key={`${paragraphIndex}-${citation}`}
+                      >
+                        {citation}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
+              </p>
+            ),
+          )}
+        </div>
       </section>
 
       <section>
@@ -440,6 +466,10 @@ function EmptyState({ message }: { message: string }) {
       {message}
     </div>
   );
+}
+
+function formatAnswerType(answerType: GroundedAnswerResponse["structuredAnswer"]["answerType"]) {
+  return answerType === "grounded" ? "grounded" : "insufficient evidence";
 }
 
 function countSections(markdown: string) {

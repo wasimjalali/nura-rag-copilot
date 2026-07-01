@@ -4,7 +4,7 @@ Nura RAG Copilot is a learning-first RAG support assistant for a synthetic suppl
 
 ## Current Phase
 
-Grounded answer generation:
+Answer quality contract:
 
 - Next.js app scaffold
 - Convex backend location
@@ -30,6 +30,9 @@ Grounded answer generation:
 - Grounded answer action using `gpt-5.4-mini`
 - Evidence prompt with citation labels
 - Premium answer panel with cited retrieved chunks
+- Structured answer contract with paragraph-level citations
+- Citation validation against retrieved chunk labels
+- Safe insufficient-evidence fallback for malformed or unsupported answers
 
 ## Planned RAG Pipeline
 
@@ -38,8 +41,9 @@ Grounded answer generation:
 3. Embeddings
 4. Convex vector search and retrieval visibility
 5. Grounded answer generation with cited evidence
-6. Refusals and answer quality checks
-7. Manual evals
+6. Answer quality contract with paragraph-level citations
+7. Premium chat UI research and design
+8. Manual evals
 
 ## Local Development
 
