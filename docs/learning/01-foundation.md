@@ -20,7 +20,7 @@ Embeddings are stored as fixed-size vectors. If we change the embedding model or
 
 ## Why The Answer Model Stays Configurable
 
-The answer model does not shape stored vector data. We can start with GPT-4.1 through Microsoft Foundry and compare GPT-4.1 mini later without rebuilding the document index.
+The answer model does not shape stored vector data. We are using `gpt-5.4-mini` through Microsoft Foundry for answer generation, while embeddings stay on `text-embedding-3-small`.
 
 ## What Comes Next
 

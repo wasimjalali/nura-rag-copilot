@@ -66,11 +66,13 @@ From Microsoft Foundry or Azure OpenAI, collect:
 
 - Endpoint, for example `https://YOUR-RESOURCE.openai.azure.com`
 - API key
-- API version required by your deployed endpoint
+- API surface marker: `v1`
 - Embedding deployment name for `text-embedding-3-small`
-- Chat deployment name for GPT-4.1 or GPT-4.1 mini
+- Chat deployment name for `gpt-5.4-mini`
 
 The deployment name is whatever you named the deployment in Foundry. It may be the same as the model name, but it does not have to be.
+
+The model version shown in the Foundry deployment table is different from the API version. For example, `2026-03-17` for `gpt-5.4-mini` and `1` for `text-embedding-3-small` are model versions. Our OpenAI-compatible API surface is `v1`.
 
 ## Put Foundry Secrets In Convex
 
@@ -88,6 +90,21 @@ Check only the variable names, not the values:
 
 ```bash
 npx convex env list --names-only
+```
+
+For the current dev deployment, the non-secret values are:
+
+```text
+AZURE_OPENAI_ENDPOINT=https://nura-rag-resource.services.ai.azure.com/openai/v1/
+AZURE_OPENAI_API_VERSION=v1
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-5.4-mini
+```
+
+The remaining value for you to set manually is:
+
+```bash
+npx convex env set AZURE_OPENAI_API_KEY
 ```
 
 ## Optional Direct OpenAI Fallback

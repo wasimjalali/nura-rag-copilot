@@ -10,7 +10,7 @@ Nura RAG Copilot is Project 01 in Wasim's AI Specialist to Agentic AI Engineer l
 - Styling: Tailwind CSS.
 - Backend/database/vector search: Convex.
 - Embeddings: `text-embedding-3-small` at 1536 dimensions.
-- Answer model: GPT-4.1 through Microsoft Foundry, with GPT-4.1 mini as the lower-cost fallback if available.
+- Answer model: `gpt-5.4-mini` through Microsoft Foundry.
 
 ## Safety Rules
 
