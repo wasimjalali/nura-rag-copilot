@@ -4,7 +4,7 @@ Nura RAG Copilot is a learning-first RAG support assistant for a synthetic suppl
 
 ## Current Phase
 
-Retrieval visibility:
+Grounded answer generation:
 
 - Next.js app scaffold
 - Convex backend location
@@ -27,6 +27,9 @@ Retrieval visibility:
 - Real question embedding through Microsoft Foundry
 - Retrieval action that returns ranked chunks and scores
 - Premium dashboard panel for inspecting retrieved evidence
+- Grounded answer action using `gpt-5.4-mini`
+- Evidence prompt with citation labels
+- Premium answer panel with cited retrieved chunks
 
 ## Planned RAG Pipeline
 
@@ -34,8 +37,8 @@ Retrieval visibility:
 2. Chunking and chunk preview
 3. Embeddings
 4. Convex vector search and retrieval visibility
-5. Grounded answer generation
-6. Citations and refusals
+5. Grounded answer generation with cited evidence
+6. Refusals and answer quality checks
 7. Manual evals
 
 ## Local Development

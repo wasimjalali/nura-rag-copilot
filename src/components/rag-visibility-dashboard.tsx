@@ -1,8 +1,8 @@
 import type { DocumentChunk, KnowledgeDocument } from "@/lib/rag/types";
 import type { embeddingConfig } from "@/lib/rag/embedding-config";
+import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
 import {
   formatRetrievalScore,
-  type RetrievalResponse,
 } from "@/lib/rag/retrieval";
 import {
   summarizeEmbeddingStorageStatus,
@@ -13,11 +13,11 @@ type RagVisibilityDashboardProps = {
   documents: KnowledgeDocument[];
   chunks: DocumentChunk[];
   embedAction: () => Promise<void>;
-  retrieveAction: (formData: FormData) => Promise<void>;
+  generateAnswerAction: (formData: FormData) => Promise<void>;
   embeddingConfig: typeof embeddingConfig;
   embeddingStorageStatus: EmbeddingStorageStatus;
-  retrieval?: RetrievalResponse | null;
-  retrievalError?: string | null;
+  groundedAnswer?: GroundedAnswerResponse | null;
+  generateAnswerError?: string | null;
   submittedQuestion?: string;
 };
 
@@ -25,11 +25,11 @@ export function RagVisibilityDashboard({
   documents,
   chunks,
   embedAction,
-  retrieveAction,
+  generateAnswerAction,
   embeddingConfig,
   embeddingStorageStatus,
-  retrieval = null,
-  retrievalError = null,
+  groundedAnswer = null,
+  generateAnswerError = null,
   submittedQuestion = "",
 }: RagVisibilityDashboardProps) {
   const totalWords = documents.reduce(
@@ -47,14 +47,14 @@ export function RagVisibilityDashboard({
         <header className="flex flex-col gap-5 border-b border-[#d8cdbb] pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-              Project 01 · Step 5
+              Project 01 · Step 6
             </p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight text-[#071a33]">
               RAG visibility
             </h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-[#39465a]">
-              Now we inspect the exact chunks Convex retrieves before the
-              answer model writes anything.
+              Now the answer model writes from retrieved evidence, while the
+              supporting chunks stay visible for inspection.
             </p>
           </div>
 
@@ -166,47 +166,47 @@ export function RagVisibilityDashboard({
           <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(380px,0.68fr)]">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#123c69]">
-                Retrieval visibility
+                Grounded generation
               </p>
               <h2 className="mt-2 text-2xl font-semibold text-[#071a33]">
-                Retrieve evidence
+                Generate grounded answer
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[#39465a]">
-                The question becomes a 1536-dimension vector, then Convex finds
-                the nearest stored chunk vectors. These chunks are the evidence
-                candidates for the next answer-generation phase.
+                The system retrieves evidence first, then asks the answer model
+                to respond only from those chunks. The citations below keep the
+                answer traceable.
               </p>
 
-              <form action={retrieveAction} className="mt-5">
+              <form action={generateAnswerAction} className="mt-5">
                 <label className="sr-only" htmlFor="retrieval-question">
                   Question
                 </label>
                 <div className="flex flex-col gap-3 sm:flex-row">
-                  <input
-                    className="min-h-12 flex-1 rounded-lg border border-[#c7d1dc] bg-[#fbfaf7] px-4 text-sm text-[#071a33] outline-none transition placeholder:text-[#758295] focus:border-[#123c69] focus:bg-white focus:ring-2 focus:ring-[#123c69]/15 disabled:bg-[#f1eadf] disabled:text-[#69778a]"
+                  <textarea
+                    className="min-h-24 flex-1 resize-none rounded-lg border border-[#c7d1dc] bg-[#fbfaf7] px-4 py-3 text-sm leading-6 text-[#071a33] outline-none transition placeholder:text-[#758295] focus:border-[#123c69] focus:bg-white focus:ring-2 focus:ring-[#123c69]/15 disabled:bg-[#f1eadf] disabled:text-[#69778a] sm:min-h-12"
                     defaultValue={submittedQuestion}
                     disabled={!retrievalReady}
                     id="retrieval-question"
                     name="question"
                     placeholder="Can customers return opened products?"
                     required
-                    type="text"
+                    rows={2}
                   />
                   <button
                     className="min-h-12 rounded-lg border border-[#123c69] bg-[#123c69] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0b2b4e] disabled:cursor-not-allowed disabled:border-[#9aa8b8] disabled:bg-[#9aa8b8]"
                     disabled={!retrievalReady}
                     type="submit"
                   >
-                    Retrieve chunks
+                    Generate answer
                   </button>
                 </div>
               </form>
             </div>
 
-            <RetrievalEvidence
-              error={retrievalError}
+            <GroundedAnswerPanel
+              error={generateAnswerError}
+              groundedAnswer={groundedAnswer}
               ready={retrievalReady}
-              retrieval={retrieval}
             />
           </div>
         </section>
@@ -319,19 +319,19 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RetrievalEvidence({
+function GroundedAnswerPanel({
   error,
+  groundedAnswer,
   ready,
-  retrieval,
 }: {
   error: string | null;
+  groundedAnswer: GroundedAnswerResponse | null;
   ready: boolean;
-  retrieval: RetrievalResponse | null;
 }) {
   if (!ready) {
     return (
       <div className="rounded-lg border border-dashed border-[#c9bda9] bg-[#fbfaf7] p-5 text-sm font-medium text-[#5b4b38]">
-        Store and embed chunks before retrieval.
+        Store and embed chunks before answer generation.
       </div>
     );
   }
@@ -344,68 +344,92 @@ function RetrievalEvidence({
     );
   }
 
-  if (!retrieval) {
+  if (!groundedAnswer) {
     return (
       <div className="rounded-lg border border-dashed border-[#c9bda9] bg-[#fbfaf7] p-5 text-sm leading-6 text-[#4b5870]">
-        Ask a question to inspect the retrieved chunks before answer generation.
+        Ask a question to generate an answer and inspect the cited evidence.
       </div>
     );
   }
 
-  if (retrieval.results.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-[#c9bda9] bg-[#fbfaf7] p-5 text-sm leading-6 text-[#4b5870]">
-        No evidence chunks matched this question.
-      </div>
-    );
-  }
+  const citedResults = groundedAnswer.retrieval.results;
 
   return (
-    <div>
-      <div className="flex flex-col gap-2 border-b border-[#d8cdbb] pb-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-[#071a33]">
-            Retrieved evidence
-          </p>
-          <p className="mt-1 text-xs text-[#5f6d7f]">
-            {retrieval.embeddingModel} · {retrieval.embeddingDimensions} dims
-          </p>
-        </div>
-        <span className="font-mono text-xs text-[#5f6d7f]">
-          {retrieval.results.length} chunks
-        </span>
-      </div>
-
-      <div className="mt-4 grid gap-3">
-        {retrieval.results.map((result) => (
-          <article
-            className="rounded-lg border border-[#d5dfeb] bg-[#fbfdff] p-4 shadow-sm"
-            key={result.chunkId}
-          >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="font-mono text-xs font-semibold text-[#123c69]">
-                  Rank {result.rank} · {result.chunkId}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                  <span className="rounded border border-[#c7d1dc] bg-white px-2 py-1 text-[#123c69]">
-                    {result.source}
-                  </span>
-                  <span className="rounded border border-[#c7d1dc] bg-white px-2 py-1 text-[#123c69]">
-                    {result.section}
-                  </span>
-                </div>
-              </div>
-              <p className="font-mono text-xs font-semibold text-[#071a33]">
-                Score {formatRetrievalScore(result.score)}
-              </p>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-[#263244]">
-              {result.text}
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-[#b9c6d6] bg-[#fbfdff] p-4 shadow-sm">
+        <div className="flex flex-col gap-2 border-b border-[#d8cdbb] pb-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#071a33]">
+              Grounded answer
             </p>
-          </article>
-        ))}
-      </div>
+            <p className="mt-1 font-mono text-xs text-[#5f6d7f]">
+              {groundedAnswer.answerModel}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {citedResults.map((result) => (
+              <span
+                className="rounded border border-[#c7d1dc] bg-white px-2 py-1 font-mono text-xs font-semibold text-[#123c69]"
+                key={result.chunkId}
+              >
+                {result.citationLabel}
+              </span>
+            ))}
+          </div>
+        </div>
+        <p className="mt-4 text-base leading-7 text-[#1f2a3a]">
+          {groundedAnswer.answer}
+        </p>
+      </section>
+
+      <section>
+        <div className="flex flex-col gap-2 border-b border-[#d8cdbb] pb-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#071a33]">
+              Cited evidence
+            </p>
+            <p className="mt-1 text-xs text-[#5f6d7f]">
+              {groundedAnswer.retrieval.embeddingModel} ·{" "}
+              {groundedAnswer.retrieval.embeddingDimensions} dims
+            </p>
+          </div>
+          <span className="font-mono text-xs text-[#5f6d7f]">
+            {citedResults.length} chunks
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          {citedResults.map((result) => (
+            <article
+              className="rounded-lg border border-[#d5dfeb] bg-[#fbfdff] p-4 shadow-sm"
+              key={result.chunkId}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-mono text-xs font-semibold text-[#123c69]">
+                    {result.citationLabel} · Rank {result.rank} ·{" "}
+                    {result.chunkId}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded border border-[#c7d1dc] bg-white px-2 py-1 text-[#123c69]">
+                      {result.source}
+                    </span>
+                    <span className="rounded border border-[#c7d1dc] bg-white px-2 py-1 text-[#123c69]">
+                      {result.section}
+                    </span>
+                  </div>
+                </div>
+                <p className="font-mono text-xs font-semibold text-[#071a33]">
+                  Score {formatRetrievalScore(result.score)}
+                </p>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[#263244]">
+                {result.text}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

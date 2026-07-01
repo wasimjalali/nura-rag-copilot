@@ -45,9 +45,9 @@ describe("RagVisibilityDashboard", () => {
         chunks={chunks}
         documents={documents}
         embedAction={async () => {}}
+        generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
         embeddingStorageStatus={embeddingStorageStatus}
-        retrieveAction={async () => {}}
       />,
     );
 
@@ -73,10 +73,10 @@ describe("RagVisibilityDashboard", () => {
       screen.getByRole("button", { name: "Store and embed chunks" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Retrieve evidence" }),
+      screen.getByRole("heading", { name: "Generate grounded answer" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Retrieve chunks" }),
+      screen.getByRole("button", { name: "Generate answer" }),
     ).toBeInTheDocument();
   });
 
@@ -86,50 +86,64 @@ describe("RagVisibilityDashboard", () => {
         chunks={chunks}
         documents={documents}
         embedAction={async () => {}}
+        generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
         embeddingStorageStatus={{
           ...embeddingStorageStatus,
           embeddedChunks: 0,
         }}
-        retrieveAction={async () => {}}
       />,
     );
 
     expect(
-      screen.getByText("Store and embed chunks before retrieval."),
+      screen.getByText("Store and embed chunks before answer generation."),
     ).toBeInTheDocument();
   });
 
-  it("shows ranked retrieved evidence with score and source metadata", () => {
+  it("shows a grounded answer with cited retrieved evidence", () => {
     render(
       <RagVisibilityDashboard
         chunks={chunks}
         documents={documents}
         embedAction={async () => {}}
+        generateAnswerAction={async () => {}}
         embeddingConfig={embeddingConfig}
         embeddingStorageStatus={embeddingStorageStatus}
-        retrieval={{
+        groundedAnswer={{
           question: "Can customers return opened products?",
-          embeddingModel: "text-embedding-3-small",
-          embeddingDimensions: 1536,
-          results: [
-            {
-              rank: 1,
-              score: 0.81234,
-              chunkId: "return_policy__chunk_001",
-              source: "return_policy.md",
-              section: "Opened Products",
-              text: "Customers can return opened products within the policy window.",
-              tokenEstimate: 11,
-            },
-          ],
+          answer:
+            "Yes. Opened products may be returned within 30 days when the customer tried the product and is unsatisfied. [1]",
+          answerModel: "gpt-5.4-mini",
+          retrieval: {
+            embeddingModel: "text-embedding-3-small",
+            embeddingDimensions: 1536,
+            results: [
+              {
+                rank: 1,
+                score: 0.81234,
+                chunkId: "return_policy__chunk_001",
+                source: "return_policy.md",
+                section: "Opened Products",
+                text: "Customers can return opened products within the policy window.",
+                tokenEstimate: 11,
+                citationLabel: "[1]",
+              },
+            ],
+          },
         }}
-        retrieveAction={async () => {}}
+        generateAnswerError={null}
         submittedQuestion="Can customers return opened products?"
       />,
     );
 
-    expect(screen.getByText("Retrieved evidence")).toBeInTheDocument();
+    expect(screen.getByText("Grounded answer")).toBeInTheDocument();
+    expect(screen.getByText("gpt-5.4-mini")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Yes. Opened products may be returned within 30 days when the customer tried the product and is unsatisfied. [1]",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("[1]").length).toBeGreaterThan(0);
     expect(screen.getByText("Score 0.812")).toBeInTheDocument();
     expect(screen.getAllByText("return_policy.md").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
@@ -138,5 +152,22 @@ describe("RagVisibilityDashboard", () => {
         "Customers can return opened products within the policy window.",
       ).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("shows an answer error state", () => {
+    render(
+      <RagVisibilityDashboard
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        generateAnswerAction={async () => {}}
+        embeddingConfig={embeddingConfig}
+        embeddingStorageStatus={embeddingStorageStatus}
+        generateAnswerError="Answer generation failed."
+        submittedQuestion="Can customers return opened products?"
+      />,
+    );
+
+    expect(screen.getByText("Answer generation failed.")).toBeInTheDocument();
   });
 });

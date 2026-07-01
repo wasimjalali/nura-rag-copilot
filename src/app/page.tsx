@@ -4,13 +4,13 @@ import { RagVisibilityDashboard } from "@/components/rag-visibility-dashboard";
 import { api } from "../../convex/_generated/api";
 import {
   embedSyntheticDocumentsAction,
-  retrieveSyntheticChunksAction,
+  generateGroundedAnswerAction,
 } from "./actions";
 import { embeddingConfig } from "@/lib/rag/embedding-config";
 import { chunkDocuments } from "@/lib/rag/chunk";
 import { loadSyntheticDocuments } from "@/lib/rag/load-documents";
 import { emptyEmbeddingStorageStatus } from "@/lib/rag/storage-records";
-import type { RetrievalResponse } from "@/lib/rag/retrieval";
+import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +18,9 @@ type HomeProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type RetrievalState = {
-  retrieval: RetrievalResponse | null;
-  retrievalError: string | null;
+type GroundedAnswerState = {
+  groundedAnswer: GroundedAnswerResponse | null;
+  generateAnswerError: string | null;
   submittedQuestion: string;
 };
 
@@ -30,10 +30,10 @@ export default async function Home({ searchParams }: HomeProps) {
   const embeddingStorageStatus = await getEmbeddingStorageStatus();
   const params = await searchParams;
   const submittedQuestion = getSingleSearchParam(params, "question")?.trim() ?? "";
-  const retrievalErrorParam = getSingleSearchParam(params, "retrievalError");
-  const retrievalState = await getRetrievalState({
+  const answerErrorParam = getSingleSearchParam(params, "answerError");
+  const answerState = await getGroundedAnswerState({
     embeddedChunks: embeddingStorageStatus.embeddedChunks,
-    retrievalErrorParam,
+    answerErrorParam,
     submittedQuestion,
   });
 
@@ -42,12 +42,12 @@ export default async function Home({ searchParams }: HomeProps) {
       chunks={chunks}
       documents={documents}
       embedAction={embedSyntheticDocumentsAction}
+      generateAnswerAction={generateGroundedAnswerAction}
       embeddingConfig={embeddingConfig}
       embeddingStorageStatus={embeddingStorageStatus}
-      retrieval={retrievalState.retrieval}
-      retrievalError={retrievalState.retrievalError}
-      retrieveAction={retrieveSyntheticChunksAction}
-      submittedQuestion={retrievalState.submittedQuestion}
+      groundedAnswer={answerState.groundedAnswer}
+      generateAnswerError={answerState.generateAnswerError}
+      submittedQuestion={answerState.submittedQuestion}
     />
   );
 }
@@ -60,54 +60,54 @@ async function getEmbeddingStorageStatus() {
   }
 }
 
-async function getRetrievalState({
+async function getGroundedAnswerState({
   embeddedChunks,
-  retrievalErrorParam,
+  answerErrorParam,
   submittedQuestion,
 }: {
   embeddedChunks: number;
-  retrievalErrorParam: string | undefined;
+  answerErrorParam: string | undefined;
   submittedQuestion: string;
-}): Promise<RetrievalState> {
-  if (retrievalErrorParam === "empty") {
+}): Promise<GroundedAnswerState> {
+  if (answerErrorParam === "empty") {
     return {
-      retrieval: null,
-      retrievalError: "Enter a question to retrieve evidence.",
+      groundedAnswer: null,
+      generateAnswerError: "Enter a question to generate an answer.",
       submittedQuestion: "",
     };
   }
 
   if (!submittedQuestion) {
     return {
-      retrieval: null,
-      retrievalError: null,
+      groundedAnswer: null,
+      generateAnswerError: null,
       submittedQuestion: "",
     };
   }
 
   if (embeddedChunks === 0) {
     return {
-      retrieval: null,
-      retrievalError: "Store and embed chunks before retrieval.",
+      groundedAnswer: null,
+      generateAnswerError: "Store and embed chunks before answer generation.",
       submittedQuestion,
     };
   }
 
   try {
-    const retrieval = await fetchAction(api.ragRetrieval.retrieveRelevantChunks, {
+    const groundedAnswer = await fetchAction(api.ragAnswer.generateGroundedAnswer, {
       question: submittedQuestion,
       limit: 5,
     });
 
     return {
-      retrieval,
-      retrievalError: null,
+      groundedAnswer,
+      generateAnswerError: null,
       submittedQuestion,
     };
   } catch (error) {
     return {
-      retrieval: null,
-      retrievalError: toSafePageError(error),
+      groundedAnswer: null,
+      generateAnswerError: toSafePageError(error),
       submittedQuestion,
     };
   }

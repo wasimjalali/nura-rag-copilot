@@ -33,3 +33,13 @@ export async function retrieveSyntheticChunksAction(formData: FormData) {
 
   redirect(`/?question=${encodeURIComponent(question)}`);
 }
+
+export async function generateGroundedAnswerAction(formData: FormData) {
+  const question = String(formData.get("question") ?? "").trim();
+
+  if (!question) {
+    redirect("/?answerError=empty");
+  }
+
+  redirect(`/?question=${encodeURIComponent(question)}`);
+}

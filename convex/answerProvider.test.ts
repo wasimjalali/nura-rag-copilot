@@ -57,7 +57,7 @@ describe("answer provider helper", () => {
           model: "gpt-5.4-mini",
           messages,
           temperature: 0.2,
-          max_tokens: 500,
+          max_completion_tokens: 500,
         }),
       }),
     );
