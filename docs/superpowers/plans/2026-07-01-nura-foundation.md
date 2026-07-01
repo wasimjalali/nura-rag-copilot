@@ -33,7 +33,7 @@
 - Create: `src/test/setup.ts` for Testing Library matchers.
 - Create: `vitest.config.ts` for component tests.
 - Create: `convex/schema.ts` for initial Convex schema.
-- Create: `convex/health.ts` for a tiny query proving where Convex functions will live.
+- Create: `convex/README.md` for the interactive Convex setup note.
 - Create: `AGENTS.md` for durable project and coding-agent rules.
 - Create: `.env.example` for local and Convex environment variables.
 - Create: `docs/learning/01-foundation.md` for the first learning checkpoint.
@@ -291,7 +291,7 @@ Expected: PASS.
 
 **Files:**
 - Create: `convex/schema.ts`
-- Create: `convex/health.ts`
+- Create: `convex/README.md`
 - Create: `.env.example`
 
 **Interfaces:**
@@ -316,23 +316,31 @@ export default defineSchema({
 });
 ```
 
-- [ ] **Step 2: Add health query**
+- [ ] **Step 2: Add Convex setup note**
 
-Create `convex/health.ts`:
+Create `convex/README.md`:
 
-```ts
-import { query } from "./_generated/server";
+```md
+# Convex Backend
 
-export const status = query({
-  args: {},
-  handler: async () => {
-    return {
-      ok: true,
-      service: "convex",
-      project: "nura-rag-copilot",
-    };
-  },
-});
+This directory is where Nura's Convex backend functions and schema live.
+
+## Current Foundation State
+
+- `schema.ts` defines the first placeholder table for project notes.
+- `convex/_generated/` is intentionally not present yet because Convex requires an interactive project setup before code generation.
+
+## First Interactive Setup Step
+
+Run this when you are ready to connect the project to Convex:
+
+~~~bash
+npx convex dev
+~~~
+
+That command logs in, configures a dev deployment, writes local Convex environment settings, generates `convex/_generated/`, and starts watching backend files.
+
+After setup, commit the generated Convex files so the project typechecks consistently.
 ```
 
 - [ ] **Step 3: Add environment documentation**
@@ -363,7 +371,7 @@ Run:
 npx convex codegen
 ```
 
-Expected: `convex/_generated/` is created. If Convex requires login or project setup, document the blocker and continue with Next.js verification.
+Expected: If `CONVEX_DEPLOYMENT` is configured, `convex/_generated/` is created. If Convex requires login or project setup, document that `npx convex dev` must be run interactively and continue with Next.js verification.
 
 ---
 
