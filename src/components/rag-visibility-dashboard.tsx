@@ -5,20 +5,22 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
 
 import type { DocumentChunk, KnowledgeDocument } from "@/lib/rag/types";
-import { embeddingConfig as defaultEmbeddingConfig } from "@/lib/rag/embedding-config";
 import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
 import { formatRetrievalScore } from "@/lib/rag/retrieval";
-import {
-  summarizeEmbeddingStorageStatus,
-  type EmbeddingStorageStatus,
-} from "@/lib/rag/storage-records";
+import type { EmbeddingStorageStatus } from "@/lib/rag/storage-records";
 import { MANUAL_EVAL_SET } from "@/lib/eval/manual-eval-set";
+import type {
+  EvalCaseResult,
+  EvalRunResult,
+} from "@/lib/eval/manual-eval-set";
+import { runEvalsAction } from "@/app/eval-actions";
 import { NuraLogo, NuraMark } from "@/components/nura-logo";
 import {
   ArrowRightIcon,
@@ -30,15 +32,12 @@ import {
   LayersIcon,
   PlusIcon,
   QuoteIcon,
-  RetrievalIcon,
   SendIcon,
-  SettingsIcon,
   SourceIcon,
+  UploadIcon,
 } from "@/components/icons";
 
-type WorkspaceView = "chat" | "knowledge" | "retrieval" | "evaluations" | "settings";
-
-type EmbeddingConfig = typeof defaultEmbeddingConfig;
+type WorkspaceView = "chat" | "knowledge" | "evaluations";
 
 type RagVisibilityDashboardProps = {
   documents: KnowledgeDocument[];
@@ -46,7 +45,6 @@ type RagVisibilityDashboardProps = {
   addDocumentAction: (formData: FormData) => Promise<void>;
   embedAction: () => Promise<void>;
   generateAnswerAction: (formData: FormData) => Promise<void>;
-  embeddingConfig: EmbeddingConfig;
   embeddingStorageStatus: EmbeddingStorageStatus;
   groundedAnswer?: GroundedAnswerResponse | null;
   generateAnswerError?: string | null;
@@ -75,26 +73,14 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { id: "chat", label: "Chat", icon: ChatIcon },
   { id: "knowledge", label: "Knowledge base", icon: KnowledgeIcon },
-  { id: "retrieval", label: "Retrieval", icon: RetrievalIcon },
   { id: "evaluations", label: "Evaluations", icon: EvaluationsIcon },
-  { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
-const QUESTION_POOL = [
+const SAMPLE_QUESTIONS = [
   "Can customers return opened products?",
   "Does express shipping change the order cutoff?",
   "How much can an agent discount without manager approval?",
   "How do I pause a subscription for a month?",
-  "Which allergens are declared for the plant protein?",
-  "What should support say when the evidence is missing?",
-];
-
-const GENERATION_STEPS = [
-  "Embedding your question",
-  "Searching the knowledge base",
-  "Ranking the retrieved chunks",
-  "Writing a grounded answer",
-  "Checking every citation",
 ];
 
 export function RagVisibilityDashboard({
@@ -103,7 +89,6 @@ export function RagVisibilityDashboard({
   addDocumentAction,
   embedAction,
   generateAnswerAction,
-  embeddingConfig,
   embeddingStorageStatus,
   groundedAnswer = null,
   generateAnswerError = null,
@@ -116,12 +101,7 @@ export function RagVisibilityDashboard({
   const [focusToken, setFocusToken] = useState(0);
   const [focusId, setFocusId] = useState<string | null>(null);
 
-  const storageSummary = summarizeEmbeddingStorageStatus(embeddingStorageStatus);
   const retrievalReady = embeddingStorageStatus.embeddedChunks > 0;
-  const totalWords = useMemo(
-    () => documents.reduce((sum, document) => sum + countWords(document.text), 0),
-    [documents],
-  );
 
   const retrievedItems = useMemo(
     () => buildEvidenceItems(groundedAnswer),
@@ -144,14 +124,20 @@ export function RagVisibilityDashboard({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setMobileNavOpen(false);
-        setSourcesOpen(false);
+      if (event.key !== "Escape") {
+        return;
       }
+      // A dialog owns Escape while it is open; let it close only itself so the
+      // sources panel behind it does not collapse at the same time.
+      if (selectedChunk) {
+        return;
+      }
+      setMobileNavOpen(false);
+      setSourcesOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [selectedChunk]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-canvas text-ink">
@@ -168,28 +154,20 @@ export function RagVisibilityDashboard({
       />
 
       {mobileNavOpen ? (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <button
-            aria-label="Close navigation"
-            className="absolute inset-0 bg-ink/30"
-            onClick={() => setMobileNavOpen(false)}
-            type="button"
+        <MobileNavOverlay onClose={() => setMobileNavOpen(false)}>
+          <NavRail
+            activeView={activeView}
+            documentsCount={documents.length}
+            embeddedChunks={embeddingStorageStatus.embeddedChunks}
+            mobile
+            onSelectView={(view) => {
+              setActiveView(view);
+              setMobileNavOpen(false);
+              setSourcesOpen(false);
+            }}
+            retrievalReady={retrievalReady}
           />
-          <div className="panel-in absolute inset-y-0 left-0 w-[264px]">
-            <NavRail
-              activeView={activeView}
-              documentsCount={documents.length}
-              embeddedChunks={embeddingStorageStatus.embeddedChunks}
-              mobile
-              onSelectView={(view) => {
-                setActiveView(view);
-                setMobileNavOpen(false);
-                setSourcesOpen(false);
-              }}
-              retrievalReady={retrievalReady}
-            />
-          </div>
-        </div>
+        </MobileNavOverlay>
       ) : null}
 
       <div className="flex min-w-0 flex-1">
@@ -219,23 +197,7 @@ export function RagVisibilityDashboard({
                   retrievalReady={retrievalReady}
                 />
               ) : null}
-              {activeView === "retrieval" ? (
-                <RetrievalView
-                  chunks={chunks}
-                  embedAction={embedAction}
-                  embeddingConfig={embeddingConfig}
-                  storageSummary={storageSummary}
-                  totalWords={totalWords}
-                />
-              ) : null}
               {activeView === "evaluations" ? <EvaluationsView /> : null}
-              {activeView === "settings" ? (
-                <SettingsView
-                  documentsCount={documents.length}
-                  embeddingConfig={embeddingConfig}
-                  storageSummary={storageSummary}
-                />
-              ) : null}
             </ScrollView>
           )}
         </main>
@@ -376,6 +338,69 @@ function ScrollView({ children }: { children: ReactNode }) {
   );
 }
 
+// The mobile nav is modal: it traps Tab and restores focus on close so a
+// keyboard or screen-reader user cannot land on the chat hidden behind it.
+function MobileNavOverlay({
+  children,
+  onClose,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    (panel?.querySelector<HTMLElement>(FOCUSABLE) ?? panel)?.focus();
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Tab" || !panel) {
+        return;
+      }
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (items.length === 0) {
+        return;
+      }
+      const firstItem = items[0];
+      const lastItem = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === firstItem) {
+        event.preventDefault();
+        lastItem.focus();
+      } else if (!event.shiftKey && document.activeElement === lastItem) {
+        event.preventDefault();
+        firstItem.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus?.();
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-40 lg:hidden">
+      <button
+        aria-label="Close navigation"
+        className="absolute inset-0 bg-ink/30"
+        onClick={onClose}
+        type="button"
+      />
+      <div
+        aria-label="Navigation"
+        aria-modal="true"
+        className="panel-in absolute inset-y-0 left-0 w-[264px]"
+        ref={panelRef}
+        role="dialog"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Chat
  * ------------------------------------------------------------------ */
@@ -412,6 +437,16 @@ function ChatView({
     }
     formRef.current?.requestSubmit();
   }, [autoSubmitToken]);
+
+  // Clear the composer when a new question round-trips into an answer, so a
+  // follow-up starts from an empty box. This uses React's "adjust state when a
+  // prop changes" pattern (not an effect); the form reads the DOM value at
+  // submit time, so clearing after the answer returns never truncates the text.
+  const [lastSubmitted, setLastSubmitted] = useState(submittedQuestion);
+  if (submittedQuestion !== lastSubmitted) {
+    setLastSubmitted(submittedQuestion);
+    setQuestion("");
+  }
 
   function runQuestion(value: string) {
     setQuestion(value);
@@ -478,33 +513,35 @@ function ChatBody({
   const hasConversation = Boolean(submittedQuestion) || Boolean(groundedAnswer);
 
   return (
-    <div aria-live="polite" className="min-h-0 flex-1 overflow-y-auto">
+    <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
         {!ready ? (
           <SetupNotice />
         ) : pending ? (
           <div className="flex flex-col gap-6">
             {pendingQuestion ? <UserMessage text={pendingQuestion} /> : null}
-            <GenerationStepper />
+            <ThinkingIndicator />
           </div>
         ) : !hasConversation ? (
           <ChatWelcome onRunQuestion={onRunQuestion} />
         ) : (
           <div className="flex flex-col gap-6">
             {submittedQuestion ? <UserMessage text={submittedQuestion} /> : null}
-            {error ? (
-              <ErrorMessage message={error} />
-            ) : groundedAnswer ? (
-              <AnswerMessage
-                activeEvidenceId={activeEvidenceId}
-                citedItems={citedItems}
-                groundedAnswer={groundedAnswer}
-                onFocusEvidence={onFocusEvidence}
-                onOpenSources={onOpenSources}
-                onRunQuestion={onRunQuestion}
-                submittedQuestion={submittedQuestion}
-              />
-            ) : null}
+            {/* Scope the live region to the assistant reply only, so a screen
+                reader announces the answer once instead of the whole column. */}
+            <div aria-live="polite">
+              {error ? (
+                <ErrorMessage message={error} />
+              ) : groundedAnswer ? (
+                <AnswerMessage
+                  activeEvidenceId={activeEvidenceId}
+                  citedItems={citedItems}
+                  groundedAnswer={groundedAnswer}
+                  onFocusEvidence={onFocusEvidence}
+                  onOpenSources={onOpenSources}
+                />
+              ) : null}
+            </div>
           </div>
         )}
       </div>
@@ -527,7 +564,7 @@ function ChatWelcome({ onRunQuestion }: { onRunQuestion: (value: string) => void
       </p>
 
       <div className="mt-8 grid w-full max-w-xl gap-2 sm:grid-cols-2">
-        {QUESTION_POOL.slice(0, 4).map((sample) => (
+        {SAMPLE_QUESTIONS.map((sample) => (
           <button
             className="group flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-left text-sm text-ink transition hover:border-border-strong hover:bg-surface hover:shadow-card"
             key={sample}
@@ -546,7 +583,7 @@ function ChatWelcome({ onRunQuestion }: { onRunQuestion: (value: string) => void
 function UserMessage({ text }: { text: string }) {
   return (
     <div className="msg-in flex justify-end">
-      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[15px] leading-6 text-white shadow-sm">
+      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[15px] leading-6 text-white shadow-sm">
         {text}
       </div>
     </div>
@@ -559,20 +596,15 @@ function AnswerMessage({
   groundedAnswer,
   onFocusEvidence,
   onOpenSources,
-  onRunQuestion,
-  submittedQuestion,
 }: {
   activeEvidenceId: string | null;
   citedItems: EvidenceItem[];
   groundedAnswer: GroundedAnswerResponse;
   onFocusEvidence: (id: string) => void;
   onOpenSources: () => void;
-  onRunQuestion: (value: string) => void;
-  submittedQuestion: string;
 }) {
   const grounded = groundedAnswer.structuredAnswer.answerType === "grounded";
   const citedCount = citedItems.length;
-  const related = pickRelated(submittedQuestion, 3);
 
   return (
     <div className="msg-in flex gap-3">
@@ -590,31 +622,39 @@ function AnswerMessage({
 
         <div className="flex flex-col gap-3.5 text-[15px] leading-7 text-ink">
           {groundedAnswer.structuredAnswer.paragraphs.map((paragraph, index) => (
-            <p key={index}>
+            <p className="break-words" key={index}>
               {stripCitationMarkers(paragraph.text)}
-              {paragraph.citations.map((citation) => {
-                const item = citedItems.find((evidence) => evidence.label === citation);
-                return (
-                  <button
-                    className="cite ml-1 align-baseline"
-                    data-active={
-                      item && item.id === activeEvidenceId ? "true" : undefined
+              {/* A refusal cites nothing, so we only render the clickable
+                  citation chips for a grounded answer. */}
+              {grounded
+                ? paragraph.citations.map((citation) => {
+                    const item = citedItems.find(
+                      (evidence) => evidence.label === citation,
+                    );
+                    if (!item) {
+                      return null;
                     }
-                    disabled={!item}
-                    key={`${index}-${citation}`}
-                    onClick={() => item && onFocusEvidence(item.id)}
-                    title={item ? `${item.source} · ${item.section}` : undefined}
-                    type="button"
-                  >
-                    {citation}
-                  </button>
-                );
-              })}
+                    return (
+                      <button
+                        className="cite ml-1 align-baseline"
+                        data-active={
+                          item.id === activeEvidenceId ? "true" : undefined
+                        }
+                        key={`${index}-${citation}`}
+                        onClick={() => onFocusEvidence(item.id)}
+                        title={`${item.source} · ${item.section}`}
+                        type="button"
+                      >
+                        {citation}
+                      </button>
+                    );
+                  })
+                : null}
             </p>
           ))}
         </div>
 
-        {citedCount > 0 ? (
+        {grounded && citedCount > 0 ? (
           <button
             className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink-muted transition hover:border-accent hover:bg-accent-soft hover:text-accent-deep"
             onClick={onOpenSources}
@@ -625,88 +665,28 @@ function AnswerMessage({
             <span className="tnum text-accent-deep">{citedCount}</span>
           </button>
         ) : null}
-
-        {related.length > 0 ? (
-          <div className="mt-6">
-            <p className="mb-2 text-xs font-medium text-ink-muted">Related</p>
-            <div className="flex flex-col gap-1.5">
-              {related.map((item) => (
-                <button
-                  className="group flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-3.5 py-2.5 text-left text-sm text-ink transition hover:border-border-strong hover:shadow-card"
-                  key={item}
-                  onClick={() => onRunQuestion(item)}
-                  type="button"
-                >
-                  <span>{item}</span>
-                  <ArrowRightIcon className="size-4 shrink-0 text-ink-faint transition group-hover:translate-x-0.5 group-hover:text-accent" />
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );
 }
 
-function GenerationStepper() {
-  const [step, setStep] = useState(0);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce) {
-        return;
-      }
-    }
-    const timer = setInterval(() => {
-      setStep((current) => Math.min(current + 1, GENERATION_STEPS.length - 1));
-    }, 850);
-    return () => clearInterval(timer);
-  }, []);
-
+// A single-shot request has no real streaming progress, so this is an honest
+// in-flight indicator rather than a fake multi-step animation. The spinner
+// freezes under prefers-reduced-motion, but the text still carries the state.
+function ThinkingIndicator() {
   return (
-    <div className="msg-in flex gap-3">
+    <div className="msg-in flex gap-3" role="status">
       <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-brand shadow-sm">
         <NuraMark tone="dark" className="size-5" />
       </span>
-      <div className="flex-1 pt-1">
-        <p className="mb-3 text-sm font-semibold text-ink">Working through it</p>
-        <ol className="flex flex-col gap-2.5">
-          {GENERATION_STEPS.map((label, index) => {
-            const done = index < step;
-            const active = index === step;
-            return (
-              <li
-                className="step-line flex items-center gap-2.5 text-sm"
-                key={label}
-                style={{ animationDelay: `${index * 60}ms` }}
-              >
-                <span
-                  className={[
-                    "grid size-5 shrink-0 place-items-center rounded-full",
-                    done
-                      ? "bg-accent text-white"
-                      : active
-                        ? "bg-accent-soft text-accent-deep"
-                        : "bg-sunken text-ink-faint",
-                  ].join(" ")}
-                >
-                  {done ? (
-                    <CheckIcon className="size-3" />
-                  ) : active ? (
-                    <span className="size-2.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
-                  ) : (
-                    <span className="size-1.5 rounded-full bg-current" />
-                  )}
-                </span>
-                <span className={done || active ? "text-ink" : "text-ink-faint"}>
-                  {label}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
+      <div className="flex items-center gap-2.5 pt-1.5">
+        <span
+          aria-hidden="true"
+          className="size-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent"
+        />
+        <span className="text-sm text-ink-muted">
+          Searching the documents and writing a grounded answer…
+        </span>
       </div>
     </div>
   );
@@ -722,8 +702,8 @@ function SetupNotice() {
         Store and embed chunks before answer generation.
       </h2>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-muted">
-        The corpus has not been embedded yet. Open Knowledge base or Retrieval and
-        run the embed step, then come back to ask questions.
+        The corpus has not been embedded yet. Open Knowledge base and run the embed
+        step, then come back to ask questions.
       </p>
     </div>
   );
@@ -771,6 +751,7 @@ function ComposerBar({
             className="max-h-48 min-h-[64px] w-full resize-none border-0 bg-transparent px-3 py-3 text-[15px] leading-6 text-ink outline-none placeholder:text-ink-faint focus:outline-none focus-visible:outline-none disabled:text-ink-faint"
             disabled={disabled}
             id="chat-question"
+            maxLength={2000}
             name="question"
             onChange={(event) => onChange(event.target.value)}
             onKeyDown={(event) => {
@@ -864,6 +845,26 @@ function SourcesPanel({
   retrievedCount: number;
 }) {
   const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // On mobile the panel overlays the chat, so move focus into it and hand focus
+  // back to the trigger on close. On desktop it is an inline column, so leave
+  // focus on the citation chip the user clicked (no jarring jump).
+  useEffect(() => {
+    const isOverlay =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 1023px)").matches;
+    if (!isOverlay) {
+      return;
+    }
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    return () => {
+      if (previous?.isConnected) {
+        previous.focus();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!focusId || focusToken === 0) {
@@ -890,7 +891,10 @@ function SourcesPanel({
   }, [focusId, focusToken]);
 
   return (
-    <aside className="panel-in fixed inset-y-0 right-0 z-40 flex w-[86%] max-w-[360px] flex-col border-l border-border bg-surface shadow-pop lg:static lg:z-auto lg:w-[360px] lg:shadow-none">
+    <aside
+      aria-label="Sources"
+      className="panel-in fixed inset-y-0 right-0 z-40 flex w-[86%] max-w-[360px] flex-col border-l border-border bg-surface shadow-pop lg:static lg:z-auto lg:w-[360px] lg:shadow-none"
+    >
       <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3.5">
         <div>
           <p className="text-sm font-semibold text-ink">Sources</p>
@@ -905,6 +909,7 @@ function SourcesPanel({
           aria-label="Close sources"
           className="icon-btn size-8"
           onClick={onClose}
+          ref={closeRef}
           type="button"
         >
           <CloseIcon className="size-5" />
@@ -1118,9 +1123,7 @@ function KnowledgeView({
             <PlusIcon className="size-4" />
             Add document
           </button>
-          <form action={embedAction}>
-            <EmbedButton retrievalReady={retrievalReady} />
-          </form>
+          <ReembedButton embedAction={embedAction} retrievalReady={retrievalReady} />
         </div>
       </div>
 
@@ -1210,20 +1213,54 @@ function KnowledgeView({
   );
 }
 
-function EmbedButton({ retrievalReady }: { retrievalReady: boolean }) {
-  const { pending } = useFormStatus();
+// Client-side embed trigger: calls the server action in a transition so a
+// failure surfaces inline (and preserves the current view) instead of becoming
+// an unhandled rejection or a sticky error query param.
+function ReembedButton({
+  embedAction,
+  retrievalReady,
+}: {
+  embedAction: () => Promise<void>;
+  retrievalReady: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function handleClick() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await embedAction();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Embedding failed.");
+      }
+    });
+  }
+
   return (
-    <button className="btn btn-primary h-10 px-3.5 text-sm" disabled={pending} type="submit">
-      {pending ? (
-        <span
-          aria-hidden="true"
-          className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-        />
-      ) : (
-        <LayersIcon className="size-4" />
-      )}
-      {retrievalReady ? "Re-embed corpus" : "Store and embed chunks"}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        className="btn btn-primary h-10 px-3.5 text-sm"
+        disabled={pending}
+        onClick={handleClick}
+        type="button"
+      >
+        {pending ? (
+          <span
+            aria-hidden="true"
+            className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+          />
+        ) : (
+          <LayersIcon className="size-4" />
+        )}
+        {retrievalReady ? "Re-embed corpus" : "Store and embed chunks"}
+      </button>
+      {error ? (
+        <p className="max-w-xs text-right text-xs font-medium text-danger" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -1266,9 +1303,20 @@ function AddDocumentDialog({
   onClose: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
 
   async function handle(formData: FormData) {
     setError(null);
+    const file = formData.get("file");
+    const hasFile = file instanceof File && file.size > 0;
+    const title = String(formData.get("title") ?? "").trim();
+    const body = String(formData.get("body") ?? "").trim();
+
+    if (!hasFile && (!title || !body)) {
+      setError("Upload a file, or enter a title and document text.");
+      return;
+    }
+
     try {
       await action(formData);
       onClose();
@@ -1285,7 +1333,8 @@ function AddDocumentDialog({
         <div>
           <h2 className="text-base font-semibold text-ink">Add a synthetic document</h2>
           <p className="mt-0.5 text-xs text-ink-muted">
-            Use <code className="font-mono">## Heading</code> lines to define sections.
+            Upload a Markdown, text or PDF file, or paste text with{" "}
+            <code className="font-mono">## Heading</code> lines.
           </p>
         </div>
         <button
@@ -1299,6 +1348,31 @@ function AddDocumentDialog({
       </div>
 
       <form action={handle} className="flex flex-col gap-4 px-5 py-4">
+        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border-strong bg-canvas px-4 py-6 text-center transition hover:border-accent hover:bg-accent-soft">
+          <input
+            accept=".md,.markdown,.txt,.pdf"
+            className="sr-only"
+            name="file"
+            onChange={(event) => setFileName(event.target.files?.[0]?.name ?? null)}
+            type="file"
+          />
+          <span className="grid size-9 place-items-center rounded-lg bg-accent-soft text-accent-deep">
+            <UploadIcon className="size-5" />
+          </span>
+          <span className="break-words text-sm font-medium text-ink">
+            {fileName ?? "Click to upload a file"}
+          </span>
+          <span className="text-xs text-ink-faint">
+            Markdown, text or PDF, up to 5 MB
+          </span>
+        </label>
+
+        <div className="flex items-center gap-3 text-xs font-medium text-ink-faint">
+          <span className="h-px flex-1 bg-border" />
+          or paste manually
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
         <div className="flex flex-col gap-1.5">
           <label className="text-[13px] font-medium text-ink-muted" htmlFor="doc-title">
             Title
@@ -1308,7 +1382,6 @@ function AddDocumentDialog({
             id="doc-title"
             name="title"
             placeholder="Warranty policy"
-            required
             type="text"
           />
         </div>
@@ -1321,11 +1394,12 @@ function AddDocumentDialog({
             id="doc-body"
             name="body"
             placeholder={"## Coverage\nProducts are covered for 12 months.\n\n## Exclusions\nMisuse is not covered."}
-            required
           />
         </div>
         {error ? (
-          <p className="text-[13px] font-medium text-danger">{error}</p>
+          <p className="text-[13px] font-medium text-danger" role="alert">
+            {error}
+          </p>
         ) : null}
         <div className="flex justify-end gap-2">
           <button
@@ -1360,245 +1434,170 @@ function AddDocumentSubmit() {
 }
 
 /* ------------------------------------------------------------------ *
- * Retrieval
- * ------------------------------------------------------------------ */
-
-function RetrievalView({
-  chunks,
-  embedAction,
-  embeddingConfig,
-  storageSummary,
-  totalWords,
-}: {
-  chunks: DocumentChunk[];
-  embedAction: () => Promise<void>;
-  embeddingConfig: EmbeddingConfig;
-  storageSummary: ReturnType<typeof summarizeEmbeddingStorageStatus>;
-  totalWords: number;
-}) {
-  return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-[-0.01em] text-ink">Retrieval</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          How chunks become vectors and how questions find them.
-        </p>
-      </div>
-
-      <section className="card p-5">
-        <SectionLabel>Evidence pool</SectionLabel>
-        <h2 className="mt-2 text-lg font-semibold text-ink">
-          Every stored chunk is retrievable evidence
-        </h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
-          This is the evidence pool: each stored chunk keeps enough context to be
-          useful, plus source metadata so future answers can cite evidence.
-        </p>
-        <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCell label="Documents" value={storageSummary.storedDocumentsLabel} />
-          <StatCell label="Preview chunks" value={`${chunks.length} chunks`} />
-          <StatCell label="Words" value={totalWords.toLocaleString("en-US")} />
-          <StatCell label="Vector size" value={`${embeddingConfig.dimensions} dims`} />
-        </dl>
-      </section>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <section className="card p-5">
-          <SectionLabel>Embedding readiness</SectionLabel>
-          <h3 className="mt-2 text-base font-semibold text-ink">
-            Chunks and questions share one vector space
-          </h3>
-          <p className="mt-2 text-sm leading-6 text-ink-muted">
-            The embedding model converts both stored chunks and submitted
-            questions into fixed-length lists of numbers, so Convex can compare
-            meaning with vector search.
-          </p>
-          <dl className="mt-5 flex flex-col gap-2">
-            <KeyValue label="Model" value={embeddingConfig.model} />
-            <KeyValue
-              label="Vector size"
-              value={`${embeddingConfig.dimensions} dimensions`}
-            />
-            <KeyValue label="Provider" value={embeddingConfig.provider} />
-            <KeyValue label="Top matches per query" value="5 chunks" />
-          </dl>
-        </section>
-
-        <section className="card flex flex-col p-5">
-          <SectionLabel>Storage status</SectionLabel>
-          <h3 className="mt-2 text-base font-semibold text-ink">
-            Store reviewed chunks and generate real embeddings
-          </h3>
-          <p className="mt-2 text-sm leading-6 text-ink-muted">
-            {storageSummary.lastRunMessage}
-          </p>
-          <dl className="mt-5 grid grid-cols-2 gap-3">
-            <StatCell label="Documents" value={storageSummary.storedDocumentsLabel} />
-            <StatCell label="Chunks" value={storageSummary.storedChunksLabel} />
-            <StatCell label="Embeddings" value={storageSummary.embeddedChunksLabel} />
-            <StatCell label="Last run" value={storageSummary.lastRunLabel} />
-          </dl>
-          <form action={embedAction} className="mt-auto pt-5">
-            <RetrievalEmbedButton />
-          </form>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function RetrievalEmbedButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button className="btn btn-primary h-11 w-full text-sm" disabled={pending} type="submit">
-      {pending ? (
-        <span
-          aria-hidden="true"
-          className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-        />
-      ) : (
-        <LayersIcon className="size-4" />
-      )}
-      Store and embed chunks
-    </button>
-  );
-}
-
-/* ------------------------------------------------------------------ *
  * Evaluations
  * ------------------------------------------------------------------ */
 
 function EvaluationsView() {
-  const categories = ["Grounding", "Guardrail", "Retrieval", "Visibility"] as const;
-  const counts = categories.map((category) => ({
-    category,
-    count: MANUAL_EVAL_SET.filter((item) => item.category === category).length,
-  }));
+  const [pending, startTransition] = useTransition();
+  const [result, setResult] = useState<EvalRunResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const resultsById = useMemo(() => {
+    const map = new Map<string, EvalCaseResult>();
+    for (const item of result?.results ?? []) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [result]);
+
+  function runEvals() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        setResult(await runEvalsAction());
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "The eval run failed.");
+      }
+    });
+  }
 
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-[-0.01em] text-ink">Evaluations</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          The manual evaluation battery: {MANUAL_EVAL_SET.length} questions that each
-          target one behavior the copilot has to get right.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-[-0.01em] text-ink">
+            Evaluations
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+            {MANUAL_EVAL_SET.length} checks that run the real RAG loop and grade each
+            answer against the behavior it has to get right.
+          </p>
+        </div>
+        <button
+          className="btn btn-primary h-10 shrink-0 px-3.5 text-sm"
+          disabled={pending}
+          onClick={runEvals}
+          type="button"
+        >
+          {pending ? (
+            <span
+              aria-hidden="true"
+              className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+            />
+          ) : (
+            <CheckIcon className="size-4" />
+          )}
+          {pending ? "Running" : result ? "Run again" : "Run evals"}
+        </button>
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {counts.map(({ category, count }) => (
-          <StatCell key={category} label={category} value={`${count} checks`} />
-        ))}
-      </dl>
+      {pending ? (
+        <p className="text-sm text-ink-muted" role="status">
+          Running {MANUAL_EVAL_SET.length} checks against the model. This calls the
+          answer model once per question and can take up to a minute.
+        </p>
+      ) : null}
+      {error ? (
+        <p
+          className="rounded-xl border border-danger/25 bg-danger-soft px-4 py-3 text-sm font-medium text-danger"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
+
+      {result ? (
+        <EvalSummary result={result} />
+      ) : (
+        <p className="text-sm text-ink-faint">
+          No run yet. Each check runs live, so results reflect the current corpus and
+          model, not a canned pass.
+        </p>
+      )}
 
       <div className="flex flex-col gap-2.5">
         {MANUAL_EVAL_SET.map((item) => (
-          <article className="card flex items-start gap-4 p-4" key={item.id}>
-            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-deep">
-              <CheckIcon className="size-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-semibold text-ink">{item.question}</h3>
-              <p className="mt-1 text-sm leading-6 text-ink-muted">{item.expectation}</p>
-            </div>
-            <StatusPill tone={item.category === "Guardrail" ? "warning" : "neutral"}>
-              {item.category}
-            </StatusPill>
-          </article>
+          <EvalRow key={item.id} item={item} outcome={resultsById.get(item.id)} />
         ))}
       </div>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ *
- * Settings
- * ------------------------------------------------------------------ */
-
-function SettingsView({
-  documentsCount,
-  embeddingConfig,
-  storageSummary,
-}: {
-  documentsCount: number;
-  embeddingConfig: EmbeddingConfig;
-  storageSummary: ReturnType<typeof summarizeEmbeddingStorageStatus>;
-}) {
+function EvalSummary({ result }: { result: EvalRunResult }) {
+  const allPassed = result.passed === result.total;
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-[-0.01em] text-ink">Settings</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          The models, storage and guardrails behind every answer.
-        </p>
+    <div className="card flex flex-wrap items-center justify-between gap-4 p-5">
+      <div className="flex items-baseline gap-2">
+        <span
+          className={[
+            "tnum text-2xl font-semibold",
+            allPassed ? "text-success" : "text-ink",
+          ].join(" ")}
+        >
+          {result.passed}/{result.total}
+        </span>
+        <span className="text-sm text-ink-muted">checks passed</span>
       </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <SettingsCard
-          rows={[
-            ["Answer model", "gpt-5.4-mini"],
-            ["Serving", "Microsoft Foundry"],
-            ["Strategy", "Retrieval-augmented"],
-          ]}
-          title="Answer model"
-        />
-        <SettingsCard
-          rows={[
-            ["Embedding model", embeddingConfig.model],
-            ["Vector dimensions", `${embeddingConfig.dimensions}`],
-            ["Provider", embeddingConfig.provider],
-          ]}
-          title="Embeddings"
-        />
-        <SettingsCard
-          rows={[
-            ["Database", "Convex"],
-            ["Source documents", `${documentsCount}`],
-            ["Stored chunks", storageSummary.storedChunksLabel],
-            ["Embedded chunks", storageSummary.embeddedChunksLabel],
-            ["Last embedded", storageSummary.lastEmbeddedAtLabel],
-          ]}
-          title="Storage"
-        />
-        <SettingsCard
-          rows={[
-            ["Synthetic docs only", "Enabled"],
-            ["Missing-evidence refusal", "Enabled"],
-            ["Paragraph citations", "Required"],
-            ["Medical advice", "Blocked"],
-          ]}
-          title="Guardrails"
-        />
-      </div>
+      <StatusPill tone={allPassed ? "success" : "warning"}>
+        {allPassed ? "All passing" : `${result.total - result.passed} failing`}
+      </StatusPill>
     </div>
   );
 }
 
-function SettingsCard({
-  rows,
-  title,
+function EvalRow({
+  item,
+  outcome,
 }: {
-  rows: Array<[string, string]>;
-  title: string;
+  item: (typeof MANUAL_EVAL_SET)[number];
+  outcome: EvalCaseResult | undefined;
 }) {
   return (
-    <article className="card p-5">
-      <h3 className="text-sm font-semibold text-ink">{title}</h3>
-      <dl className="mt-3 flex flex-col">
-        {rows.map(([label, value], index) => (
-          <div
-            className={[
-              "flex items-center justify-between gap-4 py-2.5",
-              index === 0 ? "" : "border-t border-border",
-            ].join(" ")}
-            key={label}
-          >
-            <dt className="text-sm text-ink-muted">{label}</dt>
-            <dd className="text-right font-mono text-xs font-medium text-ink">{value}</dd>
+    <article className="card flex items-start gap-4 p-4">
+      <EvalStatusIcon status={outcome?.status} />
+      <div className="min-w-0 flex-1">
+        <h3 className="break-words text-sm font-semibold text-ink">{item.question}</h3>
+        <p className="mt-1 text-sm leading-6 text-ink-muted">{item.expectation}</p>
+        {outcome ? (
+          <div className="mt-2 flex flex-col gap-1.5">
+            <p className="break-words text-xs text-ink-faint">{outcome.detail}</p>
+            {outcome.citedSources.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {outcome.citedSources.map((source) => (
+                  <MetaTag key={source}>{source}</MetaTag>
+                ))}
+              </div>
+            ) : null}
           </div>
-        ))}
-      </dl>
+        ) : null}
+      </div>
+      <StatusPill tone={item.category === "Guardrail" ? "warning" : "neutral"}>
+        {item.category}
+      </StatusPill>
     </article>
+  );
+}
+
+function EvalStatusIcon({ status }: { status?: "pass" | "fail" }) {
+  if (status === "pass") {
+    return (
+      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-success-soft text-success">
+        <CheckIcon className="size-4" />
+      </span>
+    );
+  }
+  if (status === "fail") {
+    return (
+      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-danger-soft text-danger">
+        <CloseIcon className="size-4" />
+      </span>
+    );
+  }
+  return (
+    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-sunken text-ink-faint">
+      <span className="size-1.5 rounded-full bg-current" />
+    </span>
   );
 }
 
@@ -1612,14 +1611,6 @@ function SectionHeading({ title, count }: { title: string; count: string }) {
       <h2 className="text-base font-semibold text-ink">{title}</h2>
       <span className="tnum text-xs font-medium text-ink-faint">{count}</span>
     </div>
-  );
-}
-
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-deep">
-      {children}
-    </p>
   );
 }
 
@@ -1637,15 +1628,6 @@ function InlineStat({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-[11px] font-medium text-ink-faint">{label}</dt>
       <dd className="tnum mt-0.5 text-sm font-semibold text-ink">{value}</dd>
-    </div>
-  );
-}
-
-function KeyValue({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-lg bg-canvas px-3 py-2.5">
-      <dt className="text-sm text-ink-muted">{label}</dt>
-      <dd className="text-right font-mono text-xs font-medium text-ink">{value}</dd>
     </div>
   );
 }
@@ -1747,10 +1729,6 @@ function filterCitedEvidence(
     return [];
   }
   return retrievedItems.filter((item) => cited.has(item.label));
-}
-
-function pickRelated(exclude: string, count: number): string[] {
-  return QUESTION_POOL.filter((question) => question !== exclude).slice(0, count);
 }
 
 // The model embeds citation markers like "[1]" directly in the answer text.

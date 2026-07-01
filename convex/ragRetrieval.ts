@@ -13,6 +13,9 @@ import {
 const DEFAULT_RETRIEVAL_LIMIT = 5;
 const MIN_RETRIEVAL_LIMIT = 1;
 const MAX_RETRIEVAL_LIMIT = 10;
+// cosine similarity floor; tunable. Below this, treat as no evidence so the
+// deterministic refusal fires.
+const MIN_RELEVANCE_SCORE = 0.35;
 
 const retrievalChunkRecord = v.object({
   _id: v.id("documentChunks"),
@@ -87,10 +90,16 @@ export const retrieveRelevantChunks = action({
         vector,
         limit,
       });
+      // Drop matches below the relevance floor before building results, so
+      // ranks stay contiguous over the kept matches and a question with no
+      // relevant evidence returns an empty results array (triggering refusal).
+      const relevantMatches = matches.filter(
+        (match) => match._score >= MIN_RELEVANCE_SCORE,
+      );
       const chunks: RetrievalChunkRecord[] = await ctx.runQuery(
         internal.ragRetrieval.getChunksByIds,
         {
-          ids: matches.map((match) => match._id),
+          ids: relevantMatches.map((match) => match._id),
         },
       );
       const chunksById = new Map<Id<"documentChunks">, RetrievalChunkRecord>(
@@ -98,7 +107,7 @@ export const retrieveRelevantChunks = action({
       );
       const results: RetrievalResult[] = [];
 
-      for (const match of matches) {
+      for (const match of relevantMatches) {
         const chunk = chunksById.get(match._id);
 
         if (!chunk) {

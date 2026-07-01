@@ -22,13 +22,6 @@ const chunks = [
   },
 ];
 
-const embeddingConfig = {
-  provider: "azure-openai",
-  model: "text-embedding-3-small",
-  dimensions: 1536,
-  deploymentEnvVar: "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
-} as const;
-
 const embeddingStorageStatus = {
   storedDocuments: 10,
   storedChunks: 31,
@@ -38,19 +31,18 @@ const embeddingStorageStatus = {
   lastEmbeddedAt: 1782920000000,
 } as const;
 
+const baseProps = {
+  chunks,
+  documents,
+  addDocumentAction: async () => {},
+  embedAction: async () => {},
+  generateAnswerAction: async () => {},
+  embeddingStorageStatus,
+};
+
 describe("RagVisibilityDashboard", () => {
-  it("renders the product shell with the expected workspace views", () => {
-    render(
-      <RagVisibilityDashboard
-        chunks={chunks}
-        documents={documents}
-        addDocumentAction={async () => {}}
-        embedAction={async () => {}}
-        generateAnswerAction={async () => {}}
-        embeddingConfig={embeddingConfig}
-        embeddingStorageStatus={embeddingStorageStatus}
-      />,
-    );
+  it("renders the three production workspace views and drops the learning-only ones", () => {
+    render(<RagVisibilityDashboard {...baseProps} />);
 
     expect(
       screen.getByRole("heading", { name: "Ask a grounded question" }),
@@ -60,104 +52,67 @@ describe("RagVisibilityDashboard", () => {
       screen.getByRole("button", { name: "Knowledge base" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Retrieval" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("button", { name: "Evaluations" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+
+    // The Retrieval explainer and Settings diagnostics views were removed.
+    expect(screen.queryByRole("button", { name: "Retrieval" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
-  it("switches between premium workspace views", () => {
-    render(
-      <RagVisibilityDashboard
-        chunks={chunks}
-        documents={documents}
-        addDocumentAction={async () => {}}
-        embedAction={async () => {}}
-        generateAnswerAction={async () => {}}
-        embeddingConfig={embeddingConfig}
-        embeddingStorageStatus={embeddingStorageStatus}
-      />,
-    );
+  it("switches between the chat, knowledge and evaluations views", () => {
+    render(<RagVisibilityDashboard {...baseProps} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Knowledge base" }));
     expect(
       screen.getByRole("heading", { name: "Knowledge base" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Retrieval" }));
-    expect(
-      screen.getByRole("heading", { name: "Retrieval" }),
-    ).toBeInTheDocument();
-
     fireEvent.click(screen.getByRole("button", { name: "Evaluations" }));
     expect(
       screen.getByRole("heading", { name: "Evaluations" }),
     ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(
-      screen.getByRole("heading", { name: "Settings" }),
-    ).toBeInTheDocument();
   });
 
-  it("shows documents and chunk preview details", () => {
-    render(
-      <RagVisibilityDashboard
-        chunks={chunks}
-        documents={documents}
-        addDocumentAction={async () => {}}
-        embedAction={async () => {}}
-        generateAnswerAction={async () => {}}
-        embeddingConfig={embeddingConfig}
-        embeddingStorageStatus={embeddingStorageStatus}
-      />,
-    );
-
-    expect(
-      screen.getByRole("heading", { name: "Ask a grounded question" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Generate answer" }),
-    ).toBeInTheDocument();
+  it("shows documents, chunk preview and the re-embed control", () => {
+    render(<RagVisibilityDashboard {...baseProps} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Knowledge base" }));
     expect(screen.getAllByText("return_policy.md").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("return_policy__chunk_001")).toBeInTheDocument();
     expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: "Re-embed corpus" }),
+    ).toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Retrieval" }));
-    expect(
-      screen.getByText(/This is the evidence pool/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("text-embedding-3-small")).toBeInTheDocument();
-    expect(screen.getByText("1536 dimensions")).toBeInTheDocument();
-    expect(
-      screen.getByText(/The embedding model converts both stored chunks/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Storage status")).toBeInTheDocument();
-    expect(screen.getByText("31 stored")).toBeInTheDocument();
-    expect(screen.getByText("30 embedded")).toBeInTheDocument();
-    expect(screen.getByText("1 chunk returned 3 dimensions.")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Store and embed chunks" }),
-    ).toBeInTheDocument();
+  it("offers a file upload alongside paste in the add-document dialog", () => {
+    render(<RagVisibilityDashboard {...baseProps} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Knowledge base" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add document" }));
+
+    expect(screen.getByText("Click to upload a file")).toBeInTheDocument();
+    // The dialog renders through a portal to document.body, not the container.
+    const fileInput = document.querySelector('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    expect(fileInput?.getAttribute("accept")).toContain(".pdf");
+    expect(fileInput?.getAttribute("accept")).toContain(".md");
+  });
+
+  it("exposes a live eval runner instead of static passing checks", () => {
+    render(<RagVisibilityDashboard {...baseProps} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Evaluations" }));
+    expect(screen.getByRole("button", { name: "Run evals" })).toBeInTheDocument();
+    expect(screen.getByText(/No run yet/)).toBeInTheDocument();
   });
 
   it("shows a setup state before embeddings are stored", () => {
     render(
       <RagVisibilityDashboard
-        chunks={chunks}
-        documents={documents}
-        addDocumentAction={async () => {}}
-        embedAction={async () => {}}
-        generateAnswerAction={async () => {}}
-        embeddingConfig={embeddingConfig}
-        embeddingStorageStatus={{
-          ...embeddingStorageStatus,
-          embeddedChunks: 0,
-        }}
+        {...baseProps}
+        embeddingStorageStatus={{ ...embeddingStorageStatus, embeddedChunks: 0 }}
       />,
     );
 
@@ -169,13 +124,7 @@ describe("RagVisibilityDashboard", () => {
   it("shows a grounded answer with cited retrieved evidence", () => {
     render(
       <RagVisibilityDashboard
-        chunks={chunks}
-        documents={documents}
-        addDocumentAction={async () => {}}
-        embedAction={async () => {}}
-        generateAnswerAction={async () => {}}
-        embeddingConfig={embeddingConfig}
-        embeddingStorageStatus={embeddingStorageStatus}
+        {...baseProps}
         groundedAnswer={{
           question: "Can customers return opened products?",
           answer:
@@ -252,13 +201,7 @@ describe("RagVisibilityDashboard", () => {
   it("shows an insufficient-evidence answer without paragraph citations", () => {
     render(
       <RagVisibilityDashboard
-        chunks={chunks}
-        documents={documents}
-        addDocumentAction={async () => {}}
-        embedAction={async () => {}}
-        generateAnswerAction={async () => {}}
-        embeddingConfig={embeddingConfig}
-        embeddingStorageStatus={embeddingStorageStatus}
+        {...baseProps}
         groundedAnswer={{
           question: "Can this cure headaches?",
           answer: "I do not have enough retrieved evidence to answer that question.",
@@ -289,18 +232,14 @@ describe("RagVisibilityDashboard", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("insufficient evidence")).toBeInTheDocument();
+    // A refusal never offers a Sources control.
+    expect(screen.queryByRole("button", { name: /Sources/ })).toBeNull();
   });
 
   it("shows an answer error state", () => {
     render(
       <RagVisibilityDashboard
-        chunks={chunks}
-        documents={documents}
-        addDocumentAction={async () => {}}
-        embedAction={async () => {}}
-        generateAnswerAction={async () => {}}
-        embeddingConfig={embeddingConfig}
-        embeddingStorageStatus={embeddingStorageStatus}
+        {...baseProps}
         generateAnswerError="Answer generation failed."
         submittedQuestion="Can customers return opened products?"
       />,

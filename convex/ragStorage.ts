@@ -127,18 +127,56 @@ export const upsertPreviewRecords = internalMutation({
         .unique();
 
       if (existing) {
+        // When the chunk text changed, drop the stale embedding so the chunk
+        // is marked "needs re-embed" and never carries new text with an old
+        // vector. Leave the embedding intact when the text is unchanged.
+        const textChanged = existing.text !== chunk.text;
+
         await ctx.db.patch(existing._id, {
           source: chunk.source,
           section: chunk.section,
           text: chunk.text,
           tokenEstimate: chunk.tokenEstimate,
           updatedAt: args.now,
+          ...(textChanged
+            ? {
+                embedding: undefined,
+                embeddingModel: undefined,
+                embeddingDimensions: undefined,
+                embeddedAt: undefined,
+              }
+            : {}),
         });
       } else {
         await ctx.db.insert("documentChunks", {
           ...chunk,
           updatedAt: args.now,
         });
+      }
+    }
+
+    // Full reconcile. embedReviewedChunks always receives the complete current
+    // corpus, so storage must match it exactly: delete any stored chunk whose
+    // chunkId is not in the incoming set (covers a shrunken document and a
+    // document removed entirely) and any sourceDocuments row no longer present.
+    // Runs in the same mutation so it is transactional with the upserts above.
+    const incomingChunkIds = new Set(args.chunks.map((chunk) => chunk.chunkId));
+    const storedChunks = await ctx.db.query("documentChunks").collect();
+
+    for (const storedChunk of storedChunks) {
+      if (!incomingChunkIds.has(storedChunk.chunkId)) {
+        await ctx.db.delete(storedChunk._id);
+      }
+    }
+
+    const incomingSources = new Set(
+      args.documents.map((document) => document.source),
+    );
+    const storedDocuments = await ctx.db.query("sourceDocuments").collect();
+
+    for (const storedDocument of storedDocuments) {
+      if (!incomingSources.has(storedDocument.source)) {
+        await ctx.db.delete(storedDocument._id);
       }
     }
 
@@ -149,6 +187,10 @@ export const upsertPreviewRecords = internalMutation({
   },
 });
 
+// A run older than this window is treated as stale/crashed, so a new run may
+// start even if the previous one is still marked "running".
+const EMBEDDING_RUN_STALENESS_MS = 10 * 60 * 1000;
+
 export const startEmbeddingRun = internalMutation({
   args: {
     documents: v.number(),
@@ -157,6 +199,19 @@ export const startEmbeddingRun = internalMutation({
   },
   returns: v.id("embeddingRuns"),
   handler: async (ctx, args) => {
+    const latestRun = await ctx.db
+      .query("embeddingRuns")
+      .withIndex("by_started_at")
+      .order("desc")
+      .first();
+
+    if (
+      latestRun?.status === "running" &&
+      args.startedAt - latestRun.startedAt < EMBEDDING_RUN_STALENESS_MS
+    ) {
+      throw new Error("An embedding run is already in progress.");
+    }
+
     return await ctx.db.insert("embeddingRuns", {
       status: "running",
       startedAt: args.startedAt,

@@ -42,11 +42,4 @@ export default defineSchema({
     chunks: v.number(),
     embeddedChunks: v.number(),
   }).index("by_started_at", ["startedAt"]),
-
-  projectNotes: defineTable({
-    title: v.string(),
-    body: v.string(),
-    phase: v.string(),
-    createdAt: v.number(),
-  }).index("by_phase", ["phase"]),
 });
