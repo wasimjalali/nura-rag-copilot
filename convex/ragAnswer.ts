@@ -14,6 +14,7 @@ import {
   parseStructuredGroundedAnswer,
   structuredAnswerToText,
   type CitedRetrievalResult,
+  type ConversationTurn,
   type StructuredGroundedAnswer,
 } from "./groundedAnswer";
 
@@ -65,10 +66,56 @@ type GroundedAnswerResponse = {
   };
 };
 
+// Multi-turn context: how much prior conversation to carry. Bounded so the
+// cost per question stays predictable no matter how long the chat gets.
+const MAX_HISTORY_TURNS = 6;
+const MAX_HISTORY_CHARS = 6000;
+const MAX_CONTEXT_QUESTIONS = 2;
+
+function trimHistory(history: ConversationTurn[]): ConversationTurn[] {
+  const recent = history.slice(-MAX_HISTORY_TURNS);
+  const trimmed: ConversationTurn[] = [];
+  let total = 0;
+
+  // Keep the most recent turns; drop the oldest once the char budget is hit.
+  for (let index = recent.length - 1; index >= 0; index -= 1) {
+    const turn = recent[index];
+    const size = turn.question.length + turn.answer.length;
+
+    if (total + size > MAX_HISTORY_CHARS && trimmed.length > 0) {
+      break;
+    }
+
+    trimmed.unshift(turn);
+    total += size;
+  }
+
+  return trimmed;
+}
+
+// A short follow-up ("what about express?") embeds poorly on its own, so fold
+// the recent questions into the retrieval query to keep vector search on topic.
+function buildRetrievalQuery(
+  question: string,
+  history: ConversationTurn[],
+): string {
+  const priorQuestions = history
+    .slice(-MAX_CONTEXT_QUESTIONS)
+    .map((turn) => turn.question);
+
+  return [...priorQuestions, question].join("\n");
+}
+
+const historyTurn = v.object({
+  question: v.string(),
+  answer: v.string(),
+});
+
 export const generateGroundedAnswer = action({
   args: {
     question: v.string(),
     limit: v.optional(v.number()),
+    history: v.optional(v.array(historyTurn)),
   },
   returns: v.object({
     question: v.string(),
@@ -87,10 +134,13 @@ export const generateGroundedAnswer = action({
   handler: async (ctx, args): Promise<GroundedAnswerResponse> => {
     try {
       const config = readAnswerConfig();
+      const history = trimHistory(args.history ?? []);
       const retrieval: RetrievalForAnswer = await ctx.runAction(
         api.ragRetrieval.retrieveRelevantChunks,
         {
-          question: args.question,
+          // Fold recent questions into the retrieval query so a short follow-up
+          // still finds the right chunks.
+          question: buildRetrievalQuery(args.question, history),
           limit: args.limit,
         },
       );
@@ -100,7 +150,7 @@ export const generateGroundedAnswer = action({
         const structuredAnswer = buildInsufficientEvidenceAnswer();
 
         return {
-          question: retrieval.question,
+          question: args.question,
           answer: structuredAnswerToText(structuredAnswer),
           answerModel: config.deployment,
           structuredAnswer,
@@ -113,8 +163,9 @@ export const generateGroundedAnswer = action({
       }
 
       const messages = buildGroundedAnswerMessages(
-        retrieval.question,
+        args.question,
         citedResults,
+        history,
       );
       const rawAnswer = await requestChatCompletion(config, messages);
       const structuredAnswer = parseStructuredGroundedAnswer(
@@ -123,7 +174,7 @@ export const generateGroundedAnswer = action({
       );
 
       return {
-        question: retrieval.question,
+        question: args.question,
         answer: structuredAnswerToText(structuredAnswer),
         answerModel: config.deployment,
         structuredAnswer,

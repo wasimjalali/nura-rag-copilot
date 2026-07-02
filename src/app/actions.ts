@@ -5,11 +5,11 @@ import path from "node:path";
 
 import { fetchAction } from "convex/nextjs";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 import { api } from "../../convex/_generated/api";
 import { chunkDocuments } from "@/lib/rag/chunk";
 import { extractUploadedText } from "@/lib/rag/extract-upload";
+import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
 import { loadSyntheticDocuments } from "@/lib/rag/load-documents";
 import {
   toDocumentChunkRecords,
@@ -53,18 +53,42 @@ export async function embedSyntheticDocumentsAction() {
   revalidatePath("/");
 }
 
-export async function generateGroundedAnswerAction(formData: FormData) {
-  const question = String(formData.get("question") ?? "").trim();
+const RETRIEVAL_LIMIT = 5;
+// Cap the payload the client sends; the Convex action trims further to a
+// bounded rolling window (see convex/ragAnswer.ts).
+const MAX_HISTORY_TURNS_SENT = 12;
+
+export type ConversationHistoryTurn = {
+  question: string;
+  answer: string;
+};
+
+/**
+ * Answer a support question against the live RAG loop, carrying the recent
+ * conversation so follow-ups resolve. Returns the grounded answer (with its
+ * retrieval evidence); the chat UI appends it to the transcript.
+ */
+export async function askGroundedQuestion(input: {
+  question: string;
+  history: ConversationHistoryTurn[];
+}): Promise<GroundedAnswerResponse> {
+  const question = input.question.trim();
 
   if (!question) {
-    redirect("/?answerError=empty");
+    throw new Error("Enter a question to get an answer.");
   }
 
   if (question.length > MAX_QUESTION_LENGTH) {
-    redirect("/?answerError=too_long");
+    throw new Error(
+      `That question is too long. Keep it under ${MAX_QUESTION_LENGTH} characters.`,
+    );
   }
 
-  redirect(`/?question=${encodeURIComponent(question)}`);
+  return fetchAction(api.ragAnswer.generateGroundedAnswer, {
+    question,
+    history: input.history.slice(-MAX_HISTORY_TURNS_SENT),
+    limit: RETRIEVAL_LIMIT,
+  });
 }
 
 /**

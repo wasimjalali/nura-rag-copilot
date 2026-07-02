@@ -125,3 +125,21 @@ export function UploadIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function NewChatIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5H6.5A2.5 2.5 0 0 0 4 7.5v10A2.5 2.5 0 0 0 6.5 20h10a2.5 2.5 0 0 0 2.5-2.5V12" />
+      <path d="M18.4 3.6a2 2 0 0 1 2.8 2.8l-8 8-3.5.7.7-3.5Z" />
+    </Icon>
+  );
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 7h14M10 7V5.5A1.5 1.5 0 0 1 11.5 4h1A1.5 1.5 0 0 1 14 5.5V7" />
+      <path d="M6.5 7l.7 11a1.5 1.5 0 0 0 1.5 1.4h6.6a1.5 1.5 0 0 0 1.5-1.4l.7-11" />
+    </Icon>
+  );
+}
