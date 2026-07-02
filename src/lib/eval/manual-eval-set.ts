@@ -42,7 +42,7 @@ export type ManualEvalCase = {
 };
 
 /**
- * The manual evaluation battery for Project 01. Each case targets one behavior
+ * The manual evaluation battery. Each case targets one behavior
  * the copilot has to get right, drawn from the synthetic support corpus. This
  * is the source of truth the Evaluations view renders, so the set stays in one
  * reviewable place instead of being scattered through the UI.

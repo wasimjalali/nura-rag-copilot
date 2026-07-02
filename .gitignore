@@ -23,3 +23,6 @@ pnpm-debug.log*
 .playwright-mcp/
 /audit-*.png
 /verify-*.png
+
+# Personal AI-tooling config (not needed by users)
+.codex/
