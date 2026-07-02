@@ -8,7 +8,7 @@ The full retrieval-augmented generation (RAG) loop is built directly, without fr
 
 > A portfolio project demonstrating a production-grade RAG loop, built by hand rather than with a framework.
 
-![Chat with a grounded answer and citation](assets/screenshots/chat.png)
+![Nura answering a support question with an inline citation over a multi-turn conversation](Nura-rag-demo/Nura-RAG-Copilot-Response%20Example.png)
 
 ## Why build it this way
 
@@ -24,7 +24,7 @@ Most RAG demos hide the interesting parts behind a framework, so when an answer 
 
 | Sources panel | Knowledge base | Evaluations |
 | --- | --- | --- |
-| ![Sources panel showing the cited chunk](assets/screenshots/sources.png) | ![Knowledge base with documents and chunks](assets/screenshots/knowledge-base.png) | ![Live evaluation battery, all passing](assets/screenshots/evaluations.png) |
+| ![Sources panel: the cited chunk with its source, section, and similarity score](Nura-rag-demo/Nura-RAG-Copilot-Sources-sidbar.png) | ![Knowledge base: source documents and their chunks](Nura-rag-demo/Nura-RAG-Copilot-Knowledge%20base.png) | ![Live evaluation battery, all ten checks passing](Nura-rag-demo/Nura-RAG-Copilot-Evaluations.png) |
 
 ## How the RAG loop works
 
