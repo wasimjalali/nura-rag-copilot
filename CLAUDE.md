@@ -60,5 +60,5 @@ Design tokens are role-named (surface, ink, accent, border, semantic) in `src/ap
 ### Where things live
 
 - `content/synthetic-docs/` - the only data source (synthetic support docs)
+- `src/lib/rag/chat-history.ts` - client-side conversation persistence (localStorage) for the Recent history list
 - `src/lib/eval/manual-eval-set.ts` - the eval battery (questions + machine-checkable `assertion`s) the Evaluations view runs live; `src/lib/eval/run-eval.ts` holds the pure assertion logic
-- `docs/` - dated build journal (learning notes, design specs, plans); point-in-time records, not living docs

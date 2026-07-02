@@ -2,6 +2,24 @@
   "name": "nura-rag-copilot",
   "version": "0.1.0",
   "private": true,
+  "description": "A grounded RAG support copilot: retrieval-augmented answers with visible sources, inline citations and honest refusals, built directly on Next.js and Convex without RAG frameworks.",
+  "license": "MIT",
+  "author": "Wasim Jalali",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wasimjalali/nura-rag-copilot.git"
+  },
+  "homepage": "https://github.com/wasimjalali/nura-rag-copilot#readme",
+  "keywords": [
+    "rag",
+    "retrieval-augmented-generation",
+    "nextjs",
+    "convex",
+    "vector-search",
+    "embeddings",
+    "llm",
+    "citations"
+  ],
   "engines": {
     "node": ">=20"
   },
