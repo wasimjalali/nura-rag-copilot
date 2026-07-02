@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { RagVisibilityDashboard } from "./rag-visibility-dashboard";
+import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
 
 const documents = [
   {
@@ -31,14 +32,119 @@ const embeddingStorageStatus = {
   lastEmbeddedAt: 1782920000000,
 } as const;
 
+const groundedAnswer: GroundedAnswerResponse = {
+  question: "Can customers return opened products?",
+  answer:
+    "Opened products may be returned within 30 days. [1]\n\nOrders outside the policy window are not eligible. [2]",
+  answerModel: "gpt-5.4-mini",
+  structuredAnswer: {
+    answerType: "grounded",
+    paragraphs: [
+      {
+        text: "Opened products may be returned within 30 days.",
+        citations: ["[1]"],
+      },
+      {
+        text: "Orders outside the policy window are not eligible.",
+        citations: ["[2]"],
+      },
+    ],
+  },
+  retrieval: {
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+    results: [
+      {
+        rank: 1,
+        score: 0.81234,
+        chunkId: "return_policy__chunk_001",
+        source: "return_policy.md",
+        section: "Opened Products",
+        text: "Customers can return opened products within the policy window.",
+        tokenEstimate: 11,
+        citationLabel: "[1]",
+      },
+      {
+        rank: 2,
+        score: 0.61234,
+        chunkId: "return_policy__chunk_002",
+        source: "return_policy.md",
+        section: "Non-Returnable Orders",
+        text: "Orders outside the policy window are not eligible.",
+        tokenEstimate: 8,
+        citationLabel: "[2]",
+      },
+    ],
+  },
+};
+
+const followupAnswer: GroundedAnswerResponse = {
+  question: "What about express shipping?",
+  answer: "Express orders placed before 2 PM ship the same day. [1]",
+  answerModel: "gpt-5.4-mini",
+  structuredAnswer: {
+    answerType: "grounded",
+    paragraphs: [
+      {
+        text: "Express orders placed before 2 PM ship the same day.",
+        citations: ["[1]"],
+      },
+    ],
+  },
+  retrieval: {
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+    results: [
+      {
+        rank: 1,
+        score: 0.72,
+        chunkId: "shipping_policy__chunk_001",
+        source: "shipping_policy.md",
+        section: "Express",
+        text: "Express orders placed before 2 PM ship the same day.",
+        tokenEstimate: 9,
+        citationLabel: "[1]",
+      },
+    ],
+  },
+};
+
+const insufficientAnswer: GroundedAnswerResponse = {
+  question: "Can this cure headaches?",
+  answer: "I do not have enough retrieved evidence to answer that question.",
+  answerModel: "gpt-5.4-mini",
+  structuredAnswer: {
+    answerType: "insufficient_evidence",
+    paragraphs: [
+      {
+        text: "I do not have enough retrieved evidence to answer that question.",
+        citations: [],
+      },
+    ],
+  },
+  retrieval: {
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+    results: [],
+  },
+};
+
 const baseProps = {
   chunks,
   documents,
   addDocumentAction: async () => {},
   embedAction: async () => {},
-  generateAnswerAction: async () => {},
+  askAction: async () => groundedAnswer,
   embeddingStorageStatus,
 };
+
+// Type a question into the composer and submit it, the way the user does.
+function askQuestion(text: string) {
+  fireEvent.change(screen.getByLabelText("Question"), {
+    target: { value: text },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Generate answer" }));
+}
 
 describe("RagVisibilityDashboard", () => {
   it("renders the three production workspace views and drops the learning-only ones", () => {
@@ -121,62 +227,18 @@ describe("RagVisibilityDashboard", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows a grounded answer with cited retrieved evidence", () => {
+  it("shows a grounded answer with cited retrieved evidence", async () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        groundedAnswer={{
-          question: "Can customers return opened products?",
-          answer:
-            "Opened products may be returned within 30 days. [1]\n\nOrders outside the policy window are not eligible. [2]",
-          answerModel: "gpt-5.4-mini",
-          structuredAnswer: {
-            answerType: "grounded",
-            paragraphs: [
-              {
-                text: "Opened products may be returned within 30 days.",
-                citations: ["[1]"],
-              },
-              {
-                text: "Orders outside the policy window are not eligible.",
-                citations: ["[2]"],
-              },
-            ],
-          },
-          retrieval: {
-            embeddingModel: "text-embedding-3-small",
-            embeddingDimensions: 1536,
-            results: [
-              {
-                rank: 1,
-                score: 0.81234,
-                chunkId: "return_policy__chunk_001",
-                source: "return_policy.md",
-                section: "Opened Products",
-                text: "Customers can return opened products within the policy window.",
-                tokenEstimate: 11,
-                citationLabel: "[1]",
-              },
-              {
-                rank: 2,
-                score: 0.61234,
-                chunkId: "return_policy__chunk_002",
-                source: "return_policy.md",
-                section: "Non-Returnable Orders",
-                text: "Orders outside the policy window are not eligible.",
-                tokenEstimate: 8,
-                citationLabel: "[2]",
-              },
-            ],
-          },
-        }}
-        generateAnswerError={null}
-        submittedQuestion="Can customers return opened products?"
+        askAction={async () => groundedAnswer}
       />,
     );
 
+    askQuestion("Can customers return opened products?");
+
     expect(
-      screen.getByText("Opened products may be returned within 30 days."),
+      await screen.findByText("Opened products may be returned within 30 days."),
     ).toBeInTheDocument();
     expect(
       screen.getAllByText("Orders outside the policy window are not eligible.")
@@ -198,36 +260,69 @@ describe("RagVisibilityDashboard", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("shows an insufficient-evidence answer without paragraph citations", () => {
+  it("carries the conversation so a follow-up sends prior turns as context", async () => {
+    const askAction = vi.fn(async (input: { history: unknown[] }) =>
+      input.history.length === 0 ? groundedAnswer : followupAnswer,
+    );
+
+    render(<RagVisibilityDashboard {...baseProps} askAction={askAction} />);
+
+    askQuestion("Can customers return opened products?");
+    await screen.findByText("Opened products may be returned within 30 days.");
+
+    askQuestion("What about express shipping?");
+    await screen.findByText(
+      "Express orders placed before 2 PM ship the same day.",
+    );
+
+    // Both turns stay on screen, and the second call carried the first turn.
+    expect(
+      screen.getByText("Opened products may be returned within 30 days."),
+    ).toBeInTheDocument();
+    expect(askAction).toHaveBeenCalledTimes(2);
+    const secondCall = askAction.mock.calls[1][0] as {
+      question: string;
+      history: { question: string; answer: string }[];
+    };
+    expect(secondCall.history).toHaveLength(1);
+    expect(secondCall.history[0].question).toBe(
+      "Can customers return opened products?",
+    );
+  });
+
+  it("clears the transcript when a new chat is started", async () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        groundedAnswer={{
-          question: "Can this cure headaches?",
-          answer: "I do not have enough retrieved evidence to answer that question.",
-          answerModel: "gpt-5.4-mini",
-          structuredAnswer: {
-            answerType: "insufficient_evidence",
-            paragraphs: [
-              {
-                text: "I do not have enough retrieved evidence to answer that question.",
-                citations: [],
-              },
-            ],
-          },
-          retrieval: {
-            embeddingModel: "text-embedding-3-small",
-            embeddingDimensions: 1536,
-            results: [],
-          },
-        }}
-        generateAnswerError={null}
-        submittedQuestion="Can this cure headaches?"
+        askAction={async () => groundedAnswer}
       />,
     );
 
+    askQuestion("Can customers return opened products?");
+    await screen.findByText("Opened products may be returned within 30 days.");
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+
     expect(
-      screen.getByText(
+      screen.getByRole("heading", { name: "Ask a grounded question" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Opened products may be returned within 30 days."),
+    ).toBeNull();
+  });
+
+  it("shows an insufficient-evidence answer without paragraph citations", async () => {
+    render(
+      <RagVisibilityDashboard
+        {...baseProps}
+        askAction={async () => insufficientAnswer}
+      />,
+    );
+
+    askQuestion("Can this cure headaches?");
+
+    expect(
+      await screen.findByText(
         "I do not have enough retrieved evidence to answer that question.",
       ),
     ).toBeInTheDocument();
@@ -236,15 +331,20 @@ describe("RagVisibilityDashboard", () => {
     expect(screen.queryByRole("button", { name: /Sources/ })).toBeNull();
   });
 
-  it("shows an answer error state", () => {
+  it("shows an answer error state", async () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        generateAnswerError="Answer generation failed."
-        submittedQuestion="Can customers return opened products?"
+        askAction={async () => {
+          throw new Error("Answer generation failed.");
+        }}
       />,
     );
 
-    expect(screen.getByText("Answer generation failed.")).toBeInTheDocument();
+    askQuestion("Can customers return opened products?");
+
+    expect(
+      await screen.findByText("Answer generation failed."),
+    ).toBeInTheDocument();
   });
 });

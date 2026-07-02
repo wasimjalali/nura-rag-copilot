@@ -35,10 +35,12 @@ Next.js App Router frontend, Convex backend (database + vector search), Microsof
 
 `src/app/page.tsx` is a `force-dynamic` server component. On each request it:
 1. Loads synthetic markdown from `content/synthetic-docs` (`src/lib/rag/load-documents.ts`) and chunks it by section heading (`src/lib/rag/chunk.ts`).
-2. Reads embedding storage status and, when a `?question=` param is present, the grounded answer, from Convex via `convex/nextjs` (`fetchQuery` / `fetchAction`).
-3. Passes everything as props to `RagVisibilityDashboard` (the one big client component).
+2. Reads embedding storage status from Convex via `convex/nextjs` (`fetchQuery`).
+3. Passes the corpus, status and the server actions (including `askGroundedQuestion`) as props to `RagVisibilityDashboard` (the one big client component).
 
-Chat is **single-shot, not streaming**: the composer is a `<form>` whose action (`generateGroundedAnswerAction` in `src/app/actions.ts`) `redirect()`s to `/?question=...`. That soft navigation re-runs `page.tsx` server-side, which returns the answer as props. Because the redirect is a soft nav (the dashboard has no key), loading state is driven by `useFormStatus().pending` inside the form rather than local state, which resets automatically after the round-trip. `embedSyntheticDocumentsAction` and `addSyntheticDocumentAction` instead `revalidatePath("/")` (no redirect), so client view state is preserved.
+Chat is **client-managed and multi-turn** (single-shot per request, not streaming). The composer calls the `askGroundedQuestion` server action directly (`src/app/actions.ts`), which forwards `{ question, history }` to `convex/ragAnswer.ts` and returns the grounded answer; the dashboard appends it to an in-memory `turns` transcript and drives loading from a `pendingQuestion` flag (not `useFormStatus`, and no `?question=` redirect). Recent turns are sent as `history` so follow-ups resolve, and `convex/ragAnswer.ts` bounds that window (`MAX_HISTORY_TURNS`) and contextualizes the retrieval query for short follow-ups. A `conversationRef` guard drops a stale answer if the user starts a new chat mid-request. `embedSyntheticDocumentsAction` and `addSyntheticDocumentAction` still `revalidatePath("/")` (no redirect), so client view state is preserved.
+
+**Chat history** is persisted client-side in `localStorage` (`src/lib/rag/chat-history.ts`), not in Convex (a server-side store is overkill for this single-user tool). Conversations (full turns, so resume restores answers + evidence) are listed in the nav rail's "Recent" section; New chat resets the transcript and starts a fresh conversation on the next answered turn.
 
 ### The two-layer RAG code
 

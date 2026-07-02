@@ -30,25 +30,38 @@ import {
   EvaluationsIcon,
   KnowledgeIcon,
   LayersIcon,
+  NewChatIcon,
   PlusIcon,
   QuoteIcon,
   SendIcon,
   SourceIcon,
+  TrashIcon,
   UploadIcon,
 } from "@/components/icons";
+import {
+  createId,
+  deriveConversationTitle,
+  loadConversations,
+  MAX_CONVERSATIONS,
+  saveConversations,
+  type ChatTurn,
+  type Conversation,
+} from "@/lib/rag/chat-history";
 
 type WorkspaceView = "chat" | "knowledge" | "evaluations";
+
+type AskAction = (input: {
+  question: string;
+  history: { question: string; answer: string }[];
+}) => Promise<GroundedAnswerResponse>;
 
 type RagVisibilityDashboardProps = {
   documents: KnowledgeDocument[];
   chunks: DocumentChunk[];
   addDocumentAction: (formData: FormData) => Promise<void>;
   embedAction: () => Promise<void>;
-  generateAnswerAction: (formData: FormData) => Promise<void>;
+  askAction: AskAction;
   embeddingStorageStatus: EmbeddingStorageStatus;
-  groundedAnswer?: GroundedAnswerResponse | null;
-  generateAnswerError?: string | null;
-  submittedQuestion?: string;
 };
 
 type EvidenceItem = {
@@ -88,11 +101,8 @@ export function RagVisibilityDashboard({
   chunks,
   addDocumentAction,
   embedAction,
-  generateAnswerAction,
+  askAction,
   embeddingStorageStatus,
-  groundedAnswer = null,
-  generateAnswerError = null,
-  submittedQuestion = "",
 }: RagVisibilityDashboardProps) {
   const [activeView, setActiveView] = useState<WorkspaceView>("chat");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -101,22 +111,171 @@ export function RagVisibilityDashboard({
   const [focusToken, setFocusToken] = useState(0);
   const [focusId, setFocusId] = useState<string | null>(null);
 
+  // Conversation state lives here so the sources panel (a sibling of the chat)
+  // can read the active turn's evidence.
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  // Saved conversations (localStorage). Loaded after mount to avoid an SSR
+  // mismatch; activeConversationId ties the on-screen transcript to a record.
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | null
+  >(null);
+  // Bumped on New chat / switching chats so an in-flight answer from an
+  // abandoned conversation is dropped instead of landing in the current one.
+  const conversationRef = useRef(0);
+  const turnSeq = useRef(0);
+
+  useEffect(() => {
+    // One-time client hydration of persisted history. Reading localStorage
+    // during render would cause an SSR/client mismatch, so it happens here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setConversations(loadConversations());
+  }, []);
+
   const retrievalReady = embeddingStorageStatus.embeddedChunks > 0;
 
+  const activeAnswer = useMemo(
+    () => turns.find((turn) => turn.id === activeTurnId)?.answer ?? null,
+    [turns, activeTurnId],
+  );
   const retrievedItems = useMemo(
-    () => buildEvidenceItems(groundedAnswer),
-    [groundedAnswer],
+    () => buildEvidenceItems(activeAnswer),
+    [activeAnswer],
   );
   const citedItems = useMemo(
-    () => filterCitedEvidence(groundedAnswer, retrievedItems),
-    [groundedAnswer, retrievedItems],
+    () => filterCitedEvidence(activeAnswer, retrievedItems),
+    [activeAnswer, retrievedItems],
   );
 
-  function openSources() {
+  // Save (or update) the active conversation to localStorage after each turn.
+  function persistConversation(nextTurns: ChatTurn[]) {
+    const id = activeConversationId ?? createId();
+    if (!activeConversationId) {
+      setActiveConversationId(id);
+    }
+    const title = deriveConversationTitle(nextTurns[0]?.question ?? "");
+    setConversations((current) => {
+      const existing = current.find((conversation) => conversation.id === id);
+      const updated: Conversation = {
+        id,
+        title,
+        turns: nextTurns,
+        createdAt: existing?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+      };
+      const next = [
+        updated,
+        ...current.filter((conversation) => conversation.id !== id),
+      ].slice(0, MAX_CONVERSATIONS);
+      saveConversations(next);
+      return next;
+    });
+  }
+
+  async function submitQuestion(rawValue: string) {
+    const question = rawValue.trim();
+    if (!question || pendingQuestion) {
+      return;
+    }
+
+    const guardToken = conversationRef.current;
+    const priorTurns = turns;
+    const history = priorTurns
+      .filter((turn) => turn.answer)
+      .map((turn) => ({ question: turn.question, answer: turn.answer!.answer }));
+
+    setPendingQuestion(question);
+    try {
+      const answer = await askAction({ question, history });
+      if (conversationRef.current !== guardToken) {
+        return;
+      }
+      turnSeq.current += 1;
+      const nextTurns = [
+        ...priorTurns,
+        { id: `turn_${turnSeq.current}`, question, answer, error: null },
+      ];
+      setTurns(nextTurns);
+      persistConversation(nextTurns);
+    } catch (error) {
+      if (conversationRef.current !== guardToken) {
+        return;
+      }
+      turnSeq.current += 1;
+      const nextTurns = [
+        ...priorTurns,
+        {
+          id: `turn_${turnSeq.current}`,
+          question,
+          answer: null,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not generate an answer.",
+        },
+      ];
+      setTurns(nextTurns);
+      persistConversation(nextTurns);
+    } finally {
+      if (conversationRef.current === guardToken) {
+        setPendingQuestion(null);
+      }
+    }
+  }
+
+  function startNewChat() {
+    conversationRef.current += 1;
+    setTurns([]);
+    setPendingQuestion(null);
+    setActiveTurnId(null);
+    setActiveConversationId(null);
+    setSourcesOpen(false);
+    setFocusId(null);
+    setSelectedChunk(null);
+  }
+
+  function selectConversation(id: string) {
+    const conversation = conversations.find((item) => item.id === id);
+    if (!conversation) {
+      return;
+    }
+    conversationRef.current += 1;
+    setTurns(conversation.turns);
+    setActiveConversationId(id);
+    setPendingQuestion(null);
+    setActiveTurnId(null);
+    setSourcesOpen(false);
+    setFocusId(null);
+    setSelectedChunk(null);
+    setMobileNavOpen(false);
+  }
+
+  function deleteConversation(id: string) {
+    setConversations((current) => {
+      const next = current.filter((conversation) => conversation.id !== id);
+      saveConversations(next);
+      return next;
+    });
+    if (id === activeConversationId) {
+      conversationRef.current += 1;
+      setTurns([]);
+      setActiveConversationId(null);
+      setPendingQuestion(null);
+      setActiveTurnId(null);
+      setSourcesOpen(false);
+      setFocusId(null);
+    }
+  }
+
+  function openSources(turnId: string) {
+    setActiveTurnId(turnId);
     setSourcesOpen(true);
   }
 
-  function focusEvidence(id: string) {
+  function focusEvidence(turnId: string, id: string) {
+    setActiveTurnId(turnId);
     setSourcesOpen(true);
     setFocusId(id);
     setFocusToken((token) => token + 1);
@@ -142,9 +301,13 @@ export function RagVisibilityDashboard({
   return (
     <div className="flex h-screen w-full overflow-hidden bg-canvas text-ink">
       <NavRail
+        activeConversationId={activeConversationId}
         activeView={activeView}
+        conversations={conversations}
         documentsCount={documents.length}
         embeddedChunks={embeddingStorageStatus.embeddedChunks}
+        onDeleteConversation={deleteConversation}
+        onSelectConversation={selectConversation}
         onSelectView={(view) => {
           setActiveView(view);
           setMobileNavOpen(false);
@@ -156,10 +319,14 @@ export function RagVisibilityDashboard({
       {mobileNavOpen ? (
         <MobileNavOverlay onClose={() => setMobileNavOpen(false)}>
           <NavRail
+            activeConversationId={activeConversationId}
             activeView={activeView}
+            conversations={conversations}
             documentsCount={documents.length}
             embeddedChunks={embeddingStorageStatus.embeddedChunks}
             mobile
+            onDeleteConversation={deleteConversation}
+            onSelectConversation={selectConversation}
             onSelectView={(view) => {
               setActiveView(view);
               setMobileNavOpen(false);
@@ -177,14 +344,15 @@ export function RagVisibilityDashboard({
           {activeView === "chat" ? (
             <ChatView
               activeEvidenceId={focusId}
-              citedItems={citedItems}
-              error={generateAnswerError}
-              generateAnswerAction={generateAnswerAction}
-              groundedAnswer={groundedAnswer}
-              onOpenSources={openSources}
+              askDisabled={!retrievalReady}
+              canReset={turns.length > 0 || pendingQuestion !== null}
               onFocusEvidence={focusEvidence}
+              onNewChat={startNewChat}
+              onOpenSources={openSources}
+              onSubmit={submitQuestion}
+              pendingQuestion={pendingQuestion}
               ready={retrievalReady}
-              submittedQuestion={submittedQuestion}
+              turns={turns}
             />
           ) : (
             <ScrollView>
@@ -234,16 +402,24 @@ export function RagVisibilityDashboard({
  * ------------------------------------------------------------------ */
 
 function NavRail({
+  activeConversationId,
   activeView,
+  conversations,
   documentsCount,
   embeddedChunks,
+  onDeleteConversation,
+  onSelectConversation,
   onSelectView,
   retrievalReady,
   mobile = false,
 }: {
+  activeConversationId: string | null;
   activeView: WorkspaceView;
+  conversations: Conversation[];
   documentsCount: number;
   embeddedChunks: number;
+  onDeleteConversation: (id: string) => void;
+  onSelectConversation: (id: string) => void;
   onSelectView: (view: WorkspaceView) => void;
   retrievalReady: boolean;
   mobile?: boolean;
@@ -278,6 +454,15 @@ function NavRail({
         })}
       </nav>
 
+      {conversations.length > 0 ? (
+        <ChatHistoryList
+          activeConversationId={activeConversationId}
+          conversations={conversations}
+          onDelete={onDeleteConversation}
+          onSelect={onSelectConversation}
+        />
+      ) : null}
+
       <div className="mt-auto flex flex-col gap-3 px-1">
         <div className="flex items-center gap-2 px-1">
           <span
@@ -299,6 +484,59 @@ function NavRail({
         </p>
       </div>
     </aside>
+  );
+}
+
+// Session history list. Titles come from each conversation's first question;
+// clicking one restores its full transcript, and delete is per-item.
+function ChatHistoryList({
+  activeConversationId,
+  conversations,
+  onDelete,
+  onSelect,
+}: {
+  activeConversationId: string | null;
+  conversations: Conversation[];
+  onDelete: (id: string) => void;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+        Recent
+      </p>
+      <div className="-mr-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
+        {conversations.map((conversation) => {
+          const active = conversation.id === activeConversationId;
+          return (
+            <div className="group relative" key={conversation.id}>
+              <button
+                aria-current={active ? "true" : undefined}
+                className={[
+                  "flex w-full items-center gap-2.5 rounded-lg py-1.5 pl-2.5 pr-8 text-left text-[13px] transition",
+                  active
+                    ? "bg-accent-soft text-accent-deep"
+                    : "text-ink-muted hover:bg-sunken hover:text-ink",
+                ].join(" ")}
+                onClick={() => onSelect(conversation.id)}
+                type="button"
+              >
+                <ChatIcon className="size-4 shrink-0 opacity-70" />
+                <span className="truncate">{conversation.title}</span>
+              </button>
+              <button
+                aria-label={`Delete chat: ${conversation.title}`}
+                className="icon-btn absolute right-1 top-1/2 size-6 -translate-y-1/2 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100"
+                onClick={() => onDelete(conversation.id)}
+                type="button"
+              >
+                <TrashIcon className="size-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -407,141 +645,152 @@ function MobileNavOverlay({
 
 function ChatView({
   activeEvidenceId,
-  citedItems,
-  error,
-  generateAnswerAction,
-  groundedAnswer,
-  onOpenSources,
+  askDisabled,
+  canReset,
   onFocusEvidence,
+  onNewChat,
+  onOpenSources,
+  onSubmit,
+  pendingQuestion,
   ready,
-  submittedQuestion,
+  turns,
 }: {
   activeEvidenceId: string | null;
-  citedItems: EvidenceItem[];
-  error: string | null;
-  generateAnswerAction: (formData: FormData) => Promise<void>;
-  groundedAnswer: GroundedAnswerResponse | null;
-  onOpenSources: () => void;
-  onFocusEvidence: (id: string) => void;
+  askDisabled: boolean;
+  canReset: boolean;
+  onFocusEvidence: (turnId: string, id: string) => void;
+  onNewChat: () => void;
+  onOpenSources: (turnId: string) => void;
+  onSubmit: (value: string) => void;
+  pendingQuestion: string | null;
   ready: boolean;
-  submittedQuestion: string;
+  turns: ChatTurn[];
 }) {
   const [question, setQuestion] = useState("");
-  const [autoSubmitToken, setAutoSubmitToken] = useState(0);
-  const formRef = useRef<HTMLFormElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Follow the newest message as the transcript grows or an answer arrives.
+  // Optional call: jsdom (tests) does not implement scrollIntoView.
   useEffect(() => {
-    if (autoSubmitToken === 0) {
+    bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+  }, [turns.length, pendingQuestion]);
+
+  function send() {
+    const value = question.trim();
+    if (!value || askDisabled || pendingQuestion) {
       return;
     }
-    formRef.current?.requestSubmit();
-  }, [autoSubmitToken]);
-
-  // Clear the composer when a new question round-trips into an answer, so a
-  // follow-up starts from an empty box. This uses React's "adjust state when a
-  // prop changes" pattern (not an effect); the form reads the DOM value at
-  // submit time, so clearing after the answer returns never truncates the text.
-  const [lastSubmitted, setLastSubmitted] = useState(submittedQuestion);
-  if (submittedQuestion !== lastSubmitted) {
-    setLastSubmitted(submittedQuestion);
+    onSubmit(value);
     setQuestion("");
   }
 
-  function runQuestion(value: string) {
-    setQuestion(value);
-    setAutoSubmitToken((token) => token + 1);
-  }
-
-  // One form wraps the whole chat so the loading state can be driven by
-  // useFormStatus (which resets automatically after the server round-trip),
-  // rather than local state that a soft navigation would leave stuck.
   return (
-    <form
-      action={generateAnswerAction}
-      className="flex h-full flex-col"
-      ref={formRef}
-    >
-      <h1 className="sr-only">Support chat</h1>
+    <div className="flex h-full flex-col">
+      <ChatHeader canReset={canReset} onNewChat={onNewChat} />
       <ChatBody
         activeEvidenceId={activeEvidenceId}
-        citedItems={citedItems}
-        error={error}
-        groundedAnswer={groundedAnswer}
+        bottomRef={bottomRef}
         onFocusEvidence={onFocusEvidence}
         onOpenSources={onOpenSources}
-        onRunQuestion={runQuestion}
-        pendingQuestion={question}
+        onRunQuestion={onSubmit}
+        pendingQuestion={pendingQuestion}
         ready={ready}
-        submittedQuestion={submittedQuestion}
+        turns={turns}
       />
       <ComposerBar
-        disabled={!ready}
-        formRef={formRef}
+        disabled={askDisabled}
         onChange={setQuestion}
-        textareaRef={textareaRef}
+        onSend={send}
+        pending={pendingQuestion !== null}
         value={question}
       />
-    </form>
+    </div>
+  );
+}
+
+function ChatHeader({
+  canReset,
+  onNewChat,
+}: {
+  canReset: boolean;
+  onNewChat: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2.5 sm:px-6">
+      <h1 className="text-sm font-semibold text-ink">Support chat</h1>
+      <button
+        className="btn btn-secondary h-9 px-3 text-sm"
+        disabled={!canReset}
+        onClick={onNewChat}
+        type="button"
+      >
+        <NewChatIcon className="size-4" />
+        New chat
+      </button>
+    </div>
   );
 }
 
 function ChatBody({
   activeEvidenceId,
-  citedItems,
-  error,
-  groundedAnswer,
+  bottomRef,
   onFocusEvidence,
   onOpenSources,
   onRunQuestion,
   pendingQuestion,
   ready,
-  submittedQuestion,
+  turns,
 }: {
   activeEvidenceId: string | null;
-  citedItems: EvidenceItem[];
-  error: string | null;
-  groundedAnswer: GroundedAnswerResponse | null;
-  onFocusEvidence: (id: string) => void;
-  onOpenSources: () => void;
+  bottomRef: React.RefObject<HTMLDivElement | null>;
+  onFocusEvidence: (turnId: string, id: string) => void;
+  onOpenSources: (turnId: string) => void;
   onRunQuestion: (value: string) => void;
-  pendingQuestion: string;
+  pendingQuestion: string | null;
   ready: boolean;
-  submittedQuestion: string;
+  turns: ChatTurn[];
 }) {
-  const { pending } = useFormStatus();
-  const hasConversation = Boolean(submittedQuestion) || Boolean(groundedAnswer);
+  const hasConversation = turns.length > 0 || pendingQuestion !== null;
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
         {!ready ? (
           <SetupNotice />
-        ) : pending ? (
-          <div className="flex flex-col gap-6">
-            {pendingQuestion ? <UserMessage text={pendingQuestion} /> : null}
-            <ThinkingIndicator />
-          </div>
         ) : !hasConversation ? (
           <ChatWelcome onRunQuestion={onRunQuestion} />
         ) : (
           <div className="flex flex-col gap-6">
-            {submittedQuestion ? <UserMessage text={submittedQuestion} /> : null}
-            {/* Scope the live region to the assistant reply only, so a screen
-                reader announces the answer once instead of the whole column. */}
-            <div aria-live="polite">
-              {error ? (
-                <ErrorMessage message={error} />
-              ) : groundedAnswer ? (
-                <AnswerMessage
-                  activeEvidenceId={activeEvidenceId}
-                  citedItems={citedItems}
-                  groundedAnswer={groundedAnswer}
-                  onFocusEvidence={onFocusEvidence}
-                  onOpenSources={onOpenSources}
-                />
-              ) : null}
-            </div>
+            {turns.map((turn, index) => {
+              const isLast =
+                index === turns.length - 1 && pendingQuestion === null;
+              return (
+                <div className="flex flex-col gap-6" key={turn.id}>
+                  <UserMessage text={turn.question} />
+                  {/* Scope the live region to the newest reply so a screen
+                      reader announces just the latest answer. */}
+                  <div aria-live={isLast ? "polite" : undefined}>
+                    {turn.error ? (
+                      <ErrorMessage message={turn.error} />
+                    ) : turn.answer ? (
+                      <AnswerMessage
+                        activeEvidenceId={activeEvidenceId}
+                        answer={turn.answer}
+                        onFocusEvidence={(id) => onFocusEvidence(turn.id, id)}
+                        onOpenSources={() => onOpenSources(turn.id)}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+            {pendingQuestion ? (
+              <div className="flex flex-col gap-6">
+                <UserMessage text={pendingQuestion} />
+                <ThinkingIndicator />
+              </div>
+            ) : null}
+            <div aria-hidden="true" ref={bottomRef} />
           </div>
         )}
       </div>
@@ -592,18 +841,17 @@ function UserMessage({ text }: { text: string }) {
 
 function AnswerMessage({
   activeEvidenceId,
-  citedItems,
-  groundedAnswer,
+  answer,
   onFocusEvidence,
   onOpenSources,
 }: {
   activeEvidenceId: string | null;
-  citedItems: EvidenceItem[];
-  groundedAnswer: GroundedAnswerResponse;
+  answer: GroundedAnswerResponse;
   onFocusEvidence: (id: string) => void;
   onOpenSources: () => void;
 }) {
-  const grounded = groundedAnswer.structuredAnswer.answerType === "grounded";
+  const grounded = answer.structuredAnswer.answerType === "grounded";
+  const citedItems = filterCitedEvidence(answer, buildEvidenceItems(answer));
   const citedCount = citedItems.length;
 
   return (
@@ -621,7 +869,7 @@ function AnswerMessage({
         </div>
 
         <div className="flex flex-col gap-3.5 text-[15px] leading-7 text-ink">
-          {groundedAnswer.structuredAnswer.paragraphs.map((paragraph, index) => (
+          {answer.structuredAnswer.paragraphs.map((paragraph, index) => (
             <p className="break-words" key={index}>
               {stripCitationMarkers(paragraph.text)}
               {/* A refusal cites nothing, so we only render the clickable
@@ -727,22 +975,26 @@ function ErrorMessage({ message }: { message: string }) {
 
 function ComposerBar({
   disabled,
-  formRef,
   onChange,
-  textareaRef,
+  onSend,
+  pending,
   value,
 }: {
   disabled: boolean;
-  formRef: React.RefObject<HTMLFormElement | null>;
   onChange: (value: string) => void;
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  onSend: () => void;
+  pending: boolean;
   value: string;
 }) {
-  const { pending } = useFormStatus();
-
   return (
-    <div className="px-4 pb-4 pt-2 sm:px-6 sm:pb-6">
-      <div className="mx-auto w-full max-w-3xl">
+    <div className="pb-4 pt-2 sm:pb-6">
+      <form
+        className="mx-auto w-full max-w-3xl px-4 sm:px-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSend();
+        }}
+      >
         <div className="rounded-2xl border border-border bg-surface p-2 shadow-raise transition focus-within:border-accent">
           <label className="sr-only" htmlFor="chat-question">
             Question
@@ -762,7 +1014,7 @@ function ComposerBar({
                 !pending
               ) {
                 event.preventDefault();
-                formRef.current?.requestSubmit();
+                onSend();
               }
             }}
             placeholder={
@@ -770,8 +1022,6 @@ function ComposerBar({
                 ? "Embed the corpus to start asking questions"
                 : "Ask about returns, shipping, allergens, discounts…"
             }
-            ref={textareaRef}
-            required
             rows={1}
             value={value}
           />
@@ -782,7 +1032,7 @@ function ComposerBar({
             <button
               aria-label="Generate answer"
               className="btn btn-primary size-9 rounded-full p-0"
-              disabled={disabled || pending}
+              disabled={disabled || pending || value.trim().length === 0}
               type="submit"
             >
               {pending ? (
@@ -796,7 +1046,7 @@ function ComposerBar({
             </button>
           </div>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
