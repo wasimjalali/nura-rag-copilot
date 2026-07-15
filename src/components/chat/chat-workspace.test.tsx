@@ -173,6 +173,88 @@ describe("ChatWorkspace", () => {
     ).toHaveLength(5);
   });
 
+  it("opens on the retrieved tab when the focused item is not cited", () => {
+    const evidence = buildEvidenceItems(answerWithFiveRetrievedAndOneCited);
+
+    render(
+      <EvidenceInspector
+        citedItems={filterCitedEvidence(answerWithFiveRetrievedAndOneCited, evidence)}
+        focusId={evidence[1].id}
+        onClose={vi.fn()}
+        onOpenChunk={vi.fn()}
+        retrievedItems={evidence}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Retrieved 5" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("changes tabs when a new focus token targets a cited item", () => {
+    const evidence = buildEvidenceItems(answerWithFiveRetrievedAndOneCited);
+    const citedItems = filterCitedEvidence(answerWithFiveRetrievedAndOneCited, evidence);
+    const { rerender } = render(
+      <EvidenceInspector
+        citedItems={citedItems}
+        focusId={evidence[1].id}
+        focusToken={1}
+        onClose={vi.fn()}
+        onOpenChunk={vi.fn()}
+        retrievedItems={evidence}
+      />,
+    );
+
+    rerender(
+      <EvidenceInspector
+        citedItems={citedItems}
+        focusId={evidence[0].id}
+        focusToken={2}
+        onClose={vi.fn()}
+        onOpenChunk={vi.fn()}
+        retrievedItems={evidence}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Cited 1" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("preserves a manually selected tab until the focus token changes", () => {
+    const evidence = buildEvidenceItems(answerWithFiveRetrievedAndOneCited);
+    const citedItems = filterCitedEvidence(answerWithFiveRetrievedAndOneCited, evidence);
+    const { rerender } = render(
+      <EvidenceInspector
+        citedItems={citedItems}
+        focusId={evidence[0].id}
+        focusToken={1}
+        onClose={vi.fn()}
+        onOpenChunk={vi.fn()}
+        retrievedItems={evidence}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Retrieved 5" }));
+    rerender(
+      <EvidenceInspector
+        citedItems={[...citedItems]}
+        focusId={evidence[0].id}
+        focusToken={1}
+        onClose={vi.fn()}
+        onOpenChunk={vi.fn()}
+        retrievedItems={evidence}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Retrieved 5" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
   it("names citation controls with the document and section", () => {
     render(<ChatWorkspaceHarness />);
 

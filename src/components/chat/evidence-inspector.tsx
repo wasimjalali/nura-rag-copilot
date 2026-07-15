@@ -43,7 +43,34 @@ export function EvidenceInspector({
   onOpenChunk,
   retrievedItems,
 }: EvidenceInspectorProps) {
-  const [activeTab, setActiveTab] = useState<EvidenceTab>("cited");
+  return (
+    <EvidenceInspectorPanel
+      citedItems={citedItems}
+      focusId={focusId}
+      focusText={focusText}
+      focusToken={focusToken}
+      key={focusToken}
+      onClose={onClose}
+      onOpenChunk={onOpenChunk}
+      retrievedItems={retrievedItems}
+    />
+  );
+}
+
+function EvidenceInspectorPanel({
+  citedItems,
+  focusId,
+  focusText,
+  focusToken,
+  onClose,
+  onOpenChunk,
+  retrievedItems,
+}: EvidenceInspectorProps) {
+  const [activeTab, setActiveTab] = useState<EvidenceTab>(() =>
+    focusId && !citedItems.some((item) => item.id === focusId)
+      ? "retrieved"
+      : "cited",
+  );
   const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const closeRef = useRef<HTMLButtonElement>(null);
   const activeItems = activeTab === "cited" ? citedItems : retrievedItems;
@@ -69,7 +96,6 @@ export function EvidenceInspector({
       return;
     }
 
-    setActiveTab(citedItems.some((item) => item.id === focusId) ? "cited" : "retrieved");
     const start = setTimeout(() => {
       const card = cardRefs.current.get(focusId);
       if (!card) {
@@ -87,7 +113,7 @@ export function EvidenceInspector({
       clearTimeout(start);
       clearTimeout(end);
     };
-  }, [citedItems, focusId, focusToken]);
+  }, [focusId, focusToken]);
 
   return (
     <aside

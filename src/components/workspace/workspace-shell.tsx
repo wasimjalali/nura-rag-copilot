@@ -3,6 +3,7 @@
 import {
   cloneElement,
   isValidElement,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -39,6 +40,7 @@ export function WorkspaceShell({
   onSelectView,
 }: WorkspaceShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
 
   function selectView(view: WorkspaceView) {
     onSelectView(view);
@@ -60,7 +62,7 @@ export function WorkspaceShell({
       {navigation}
 
       {mobileNavOpen ? (
-        <MobileNavOverlay onClose={() => setMobileNavOpen(false)}>
+        <MobileNavOverlay onClose={closeMobileNav}>
           {isValidElement<WorkspaceNavigationProps>(navigation)
             ? cloneElement(navigation, {
                 mobile: true,
@@ -144,7 +146,7 @@ function MobileNavOverlay({
       document.removeEventListener("keydown", onKey);
       previous?.focus?.();
     };
-  }, []);
+  }, [onClose]);
 
   return (
     <div className="fixed inset-0 z-40 lg:hidden">
