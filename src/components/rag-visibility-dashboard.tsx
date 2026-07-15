@@ -450,12 +450,7 @@ function ChatHeader({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2.5 sm:px-6">
-      <h1
-        aria-label={DEFAULT_NURA_CONFIG.supportRoleLabel}
-        className="text-sm font-semibold text-ink"
-      >
-        Support chat
-      </h1>
+      <h1 className="text-sm font-semibold text-ink">Support chat</h1>
       <button
         className="btn btn-secondary h-9 px-3 text-sm"
         disabled={!canReset}

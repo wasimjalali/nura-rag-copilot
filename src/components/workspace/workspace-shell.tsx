@@ -25,6 +25,12 @@ export type WorkspaceShellProps = {
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+type WorkspaceNavigationProps = {
+  mobile?: boolean;
+  onSelectConversation?: (id: string) => void;
+  onSelectView?: (view: WorkspaceView) => void;
+};
+
 export function WorkspaceShell({
   activeView,
   children,
@@ -39,6 +45,13 @@ export function WorkspaceShell({
     setMobileNavOpen(false);
   }
 
+  function selectConversation(id: string) {
+    if (isValidElement<WorkspaceNavigationProps>(navigation)) {
+      navigation.props.onSelectConversation?.(id);
+    }
+    setMobileNavOpen(false);
+  }
+
   return (
     <div
       className="flex h-screen w-full overflow-hidden bg-canvas text-ink"
@@ -48,10 +61,12 @@ export function WorkspaceShell({
 
       {mobileNavOpen ? (
         <MobileNavOverlay onClose={() => setMobileNavOpen(false)}>
-          {isValidElement<{ mobile?: boolean; onSelectView?: (view: WorkspaceView) => void }>(
-            navigation,
-          )
-            ? cloneElement(navigation, { mobile: true, onSelectView: selectView })
+          {isValidElement<WorkspaceNavigationProps>(navigation)
+            ? cloneElement(navigation, {
+                mobile: true,
+                onSelectConversation: selectConversation,
+                onSelectView: selectView,
+              })
             : navigation}
         </MobileNavOverlay>
       ) : null}
@@ -101,6 +116,11 @@ function MobileNavOverlay({
     (panel?.querySelector<HTMLElement>(FOCUSABLE) ?? panel)?.focus();
 
     function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
       if (event.key !== "Tab" || !panel) {
         return;
       }

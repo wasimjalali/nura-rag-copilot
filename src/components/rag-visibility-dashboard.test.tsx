@@ -1,24 +1,41 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { RagVisibilityDashboard } from "./rag-visibility-dashboard";
 import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
+import type { Conversation } from "@/lib/rag/chat-history";
 import { WorkspaceShell, type WorkspaceView } from "@/components/workspace/workspace-shell";
 import { WorkspaceNav } from "@/components/workspace/workspace-nav";
 import { Dialog } from "@/components/ui/dialog";
 import { StatusLabel } from "@/components/ui/status-label";
 
-function WorkspaceShellHarness() {
+function WorkspaceShellHarness({
+  conversations = [],
+}: {
+  conversations?: Conversation[];
+}) {
   const [activeView, setActiveView] = useState<WorkspaceView>("chat");
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(
+    null,
+  );
 
   return (
     <WorkspaceShell
       activeView={activeView}
-      navigation={<WorkspaceNav activeView={activeView} onSelectView={setActiveView} />}
+      navigation={
+        <WorkspaceNav
+          activeConversationId={activeConversationId}
+          activeView={activeView}
+          conversations={conversations}
+          onSelectConversation={setActiveConversationId}
+          onSelectView={setActiveView}
+        />
+      }
       onSelectView={setActiveView}
     >
       <p>{activeView} content</p>
+      <p>{activeConversationId ? `selected ${activeConversationId}` : "no chat selected"}</p>
     </WorkspaceShell>
   );
 }
@@ -192,6 +209,38 @@ describe("RagVisibilityDashboard", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("closes the mobile navigation drawer on Escape", () => {
+    render(<WorkspaceShellHarness />);
+
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes the mobile drawer after selecting a saved conversation", () => {
+    const savedConversation: Conversation = {
+      id: "saved-conversation",
+      title: "Saved conversation",
+      turns: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    render(<WorkspaceShellHarness conversations={[savedConversation]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const drawer = screen.getByRole("dialog", { name: "Navigation" });
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Saved conversation" }),
+    );
+
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    expect(screen.getByText("selected saved-conversation")).toBeInTheDocument();
+  });
+
   it("traps focus in the shared dialog and closes on Escape", () => {
     const onClose = vi.fn();
     render(
@@ -211,6 +260,25 @@ describe("RagVisibilityDashboard", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps focus on an empty shared dialog when Tab is pressed", () => {
+    render(
+      <Dialog ariaLabel="Empty dialog" maxWidth="max-w-lg" onClose={vi.fn()}>
+        <p>No actions are available.</p>
+      </Dialog>,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Empty dialog" });
+    const tabEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Tab",
+    });
+    document.dispatchEvent(tabEvent);
+
+    expect(tabEvent.defaultPrevented).toBe(true);
+    expect(dialog).toHaveFocus();
   });
 
   it("renders a reusable status label", () => {
@@ -236,6 +304,15 @@ describe("RagVisibilityDashboard", () => {
     // The Retrieval explainer and Settings diagnostics views were removed.
     expect(screen.queryByRole("button", { name: "Retrieval" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
+  });
+
+  it("keeps the support chat heading visible and accessible with the same name", () => {
+    render(<RagVisibilityDashboard {...baseProps} />);
+
+    expect(
+      screen.getByRole("heading", { name: "Support chat" }),
+    ).toHaveTextContent("Support chat");
+    expect(screen.queryByRole("heading", { name: "Support agent" })).toBeNull();
   });
 
   it("switches between the chat, knowledge and evaluations views", () => {

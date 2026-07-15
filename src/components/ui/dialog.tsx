@@ -35,6 +35,8 @@ export function Dialog({
       }
       const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
       if (items.length === 0) {
+        event.preventDefault();
+        panel.focus();
         return;
       }
       const firstItem = items[0];
