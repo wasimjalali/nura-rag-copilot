@@ -3,10 +3,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import { fetchAction } from "convex/nextjs";
+import { fetchAction, fetchMutation, fetchQuery } from "convex/nextjs";
 import { revalidatePath } from "next/cache";
 
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { chunkDocuments } from "@/lib/rag/chunk";
 import {
   actionFailure,
@@ -72,14 +73,6 @@ export async function embedSyntheticDocumentsAction() {
 }
 
 const RETRIEVAL_LIMIT = 5;
-// Cap the payload the client sends; the Convex action trims further to a
-// bounded rolling window (see convex/ragAnswer.ts).
-const MAX_HISTORY_TURNS_SENT = 12;
-
-export type ConversationHistoryTurn = {
-  question: string;
-  answer: string;
-};
 
 /**
  * Answer a support question against the live RAG loop, carrying the recent
@@ -88,7 +81,8 @@ export type ConversationHistoryTurn = {
  */
 export async function askGroundedQuestion(input: {
   question: string;
-  history: ConversationHistoryTurn[];
+  conversationId: string | null;
+  requestId: string;
 }): Promise<ActionResult<GroundedAnswerResponse>> {
   const question = input.question.trim();
 
@@ -116,7 +110,10 @@ export async function askGroundedQuestion(input: {
     return actionSuccess(
       await fetchAction(api.ragAnswer.generateGroundedAnswer, {
         question,
-        history: input.history.slice(-MAX_HISTORY_TURNS_SENT),
+        conversationId: input.conversationId
+          ? (input.conversationId as Id<"conversations">)
+          : undefined,
+        requestId: input.requestId,
         limit: RETRIEVAL_LIMIT,
       }),
     );
@@ -125,6 +122,37 @@ export async function askGroundedQuestion(input: {
       code: "INTERNAL_ERROR",
       message: "The answer could not be generated.",
       retryable: false,
+    });
+  }
+}
+
+export async function loadConversationAction(conversationId: string) {
+  try {
+    return actionSuccess(
+      await fetchQuery(api.conversations.getById, {
+        conversationId: conversationId as Id<"conversations">,
+      }),
+    );
+  } catch (error) {
+    return actionFailure(error, {
+      code: "INTERNAL_ERROR",
+      message: "The conversation could not be loaded.",
+      retryable: true,
+    });
+  }
+}
+
+export async function deleteConversationAction(conversationId: string) {
+  try {
+    await fetchMutation(api.conversations.remove, {
+      conversationId: conversationId as Id<"conversations">,
+    });
+    return actionSuccess(null);
+  } catch (error) {
+    return actionFailure(error, {
+      code: "INTERNAL_ERROR",
+      message: "The conversation could not be deleted.",
+      retryable: true,
     });
   }
 }

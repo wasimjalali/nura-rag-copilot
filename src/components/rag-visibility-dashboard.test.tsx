@@ -445,11 +445,12 @@ describe("RagVisibilityDashboard", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("carries the conversation so a follow-up sends prior turns as context", async () => {
-    const askAction = vi.fn(async (input: { history: unknown[] }) =>
-      successfulAnswer(
-        input.history.length === 0 ? groundedAnswer : followupAnswer,
-      ),
+  it("keeps conversation context server-owned for follow-up questions", async () => {
+    const askAction = vi.fn(async (input: { conversationId: string | null }) =>
+      successfulAnswer({
+        ...(input.conversationId === null ? groundedAnswer : followupAnswer),
+        conversationId: "conversation-1",
+      }),
     );
 
     render(<RagVisibilityDashboard {...baseProps} askAction={askAction} />);
@@ -462,28 +463,29 @@ describe("RagVisibilityDashboard", () => {
       "Express orders placed before 2 PM ship the same day.",
     );
 
-    // Both turns stay on screen, and the second call carried the first turn.
+    // Both turns stay on screen, while the browser sends only the backend ID.
     expect(
       screen.getByText("Opened products may be returned within 30 days."),
     ).toBeInTheDocument();
     expect(askAction).toHaveBeenCalledTimes(2);
     const secondCall = askAction.mock.calls[1][0] as {
       question: string;
-      history: { question: string; answer: string }[];
+      conversationId: string | null;
+      requestId: string;
     };
-    expect(secondCall.history).toHaveLength(1);
-    expect(secondCall.history[0].question).toBe(
-      "Can customers return opened products?",
-    );
+    expect(secondCall.conversationId).toBe("conversation-1");
+    expect(secondCall.requestId).toEqual(expect.any(String));
+    expect(secondCall).not.toHaveProperty("history");
   });
 
   it("clears provenance focus when generic sources open for another turn", async () => {
-    const askAction = vi.fn(async (input: { history: unknown[] }) =>
-      successfulAnswer(
-        input.history.length === 0
+    const askAction = vi.fn(async (input: { conversationId: string | null }) =>
+      successfulAnswer({
+        ...(input.conversationId === null
           ? groundedAnswer
-          : sameChunkFollowupAnswer,
-      ),
+          : sameChunkFollowupAnswer),
+        conversationId: "conversation-1",
+      }),
     );
 
     render(<RagVisibilityDashboard {...baseProps} askAction={askAction} />);

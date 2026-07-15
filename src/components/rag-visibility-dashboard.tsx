@@ -33,16 +33,16 @@ import { WorkspaceNav } from "@/components/workspace/workspace-nav";
 import {
   createId,
   deriveConversationTitle,
-  loadConversations,
   MAX_CONVERSATIONS,
-  saveConversations,
   type ChatTurn,
   type Conversation,
 } from "@/lib/rag/chat-history";
+import type { EvalRunResult } from "@/lib/eval/manual-eval-set";
 
 type AskAction = (input: {
   question: string;
-  history: { question: string; answer: string }[];
+  conversationId: string | null;
+  requestId: string;
 }) => Promise<ActionResult<GroundedAnswerResponse>>;
 
 type RagVisibilityDashboardProps = {
@@ -52,6 +52,14 @@ type RagVisibilityDashboardProps = {
   embedAction: () => Promise<void>;
   askAction: AskAction;
   embeddingStorageStatus: EmbeddingStorageStatus;
+  initialConversations?: Conversation[];
+  initialEvalRuns?: EvalRunResult[];
+  loadConversationAction?: (
+    conversationId: string,
+  ) => Promise<ActionResult<Conversation>>;
+  deleteConversationAction?: (
+    conversationId: string,
+  ) => Promise<ActionResult<null>>;
 };
 
 export function RagVisibilityDashboard({
@@ -61,6 +69,10 @@ export function RagVisibilityDashboard({
   embedAction,
   askAction,
   embeddingStorageStatus,
+  initialConversations = [],
+  initialEvalRuns = [],
+  loadConversationAction,
+  deleteConversationAction,
 }: RagVisibilityDashboardProps) {
   const [activeView, setActiveView] = useState<WorkspaceView>("chat");
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -74,9 +86,9 @@ export function RagVisibilityDashboard({
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
-  // Saved conversations (localStorage). Loaded after mount to avoid an SSR
-  // mismatch; activeConversationId ties the on-screen transcript to a record.
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>(
+    initialConversations,
+  );
   const [activeConversationId, setActiveConversationId] = useState<
     string | null
   >(null);
@@ -84,13 +96,6 @@ export function RagVisibilityDashboard({
   // abandoned conversation is dropped instead of landing in the current one.
   const conversationRef = useRef(0);
   const turnSeq = useRef(0);
-
-  useEffect(() => {
-    // One-time client hydration of persisted history. Reading localStorage
-    // during render would cause an SSR/client mismatch, so it happens here.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setConversations(loadConversations());
-  }, []);
 
   const retrievalReady = embeddingStorageStatus.embeddedChunks > 0;
 
@@ -107,12 +112,7 @@ export function RagVisibilityDashboard({
     [activeAnswer, retrievedItems],
   );
 
-  // Save (or update) the active conversation to localStorage after each turn.
-  function persistConversation(nextTurns: ChatTurn[]) {
-    const id = activeConversationId ?? createId();
-    if (!activeConversationId) {
-      setActiveConversationId(id);
-    }
+  function upsertConversationSummary(id: string, nextTurns: ChatTurn[]) {
     const title = deriveConversationTitle(nextTurns[0]?.question ?? "");
     setConversations((current) => {
       const existing = current.find((conversation) => conversation.id === id);
@@ -127,7 +127,6 @@ export function RagVisibilityDashboard({
         updated,
         ...current.filter((conversation) => conversation.id !== id),
       ].slice(0, MAX_CONVERSATIONS);
-      saveConversations(next);
       return next;
     });
   }
@@ -140,13 +139,14 @@ export function RagVisibilityDashboard({
 
     const guardToken = conversationRef.current;
     const priorTurns = turns;
-    const history = priorTurns
-      .filter((turn) => turn.answer)
-      .map((turn) => ({ question: turn.question, answer: turn.answer!.answer }));
 
     setPendingQuestion(question);
     try {
-      const result = await askAction({ question, history });
+      const result = await askAction({
+        question,
+        conversationId: activeConversationId,
+        requestId: createId(),
+      });
       if (conversationRef.current !== guardToken) {
         return;
       }
@@ -163,7 +163,6 @@ export function RagVisibilityDashboard({
           },
         ];
         setTurns(nextTurns);
-        persistConversation(nextTurns);
         return;
       }
 
@@ -173,7 +172,12 @@ export function RagVisibilityDashboard({
         { id: `turn_${turnSeq.current}`, question, answer, error: null },
       ];
       setTurns(nextTurns);
-      persistConversation(nextTurns);
+      const backendConversationId =
+        answer.conversationId ?? activeConversationId;
+      if (backendConversationId) {
+        setActiveConversationId(backendConversationId);
+        upsertConversationSummary(backendConversationId, nextTurns);
+      }
     } catch {
       if (conversationRef.current !== guardToken) {
         return;
@@ -189,7 +193,6 @@ export function RagVisibilityDashboard({
         },
       ];
       setTurns(nextTurns);
-      persistConversation(nextTurns);
     } finally {
       if (conversationRef.current === guardToken) {
         setPendingQuestion(null);
@@ -209,13 +212,19 @@ export function RagVisibilityDashboard({
     setSelectedChunk(null);
   }
 
-  function selectConversation(id: string) {
+  async function selectConversation(id: string) {
     const conversation = conversations.find((item) => item.id === id);
     if (!conversation) {
       return;
     }
     conversationRef.current += 1;
-    setTurns(conversation.turns);
+    if (loadConversationAction) {
+      const result = await loadConversationAction(id);
+      if (!result.ok) return;
+      setTurns(result.data.turns);
+    } else {
+      setTurns(conversation.turns);
+    }
     setActiveConversationId(id);
     setPendingQuestion(null);
     setActiveTurnId(null);
@@ -225,11 +234,13 @@ export function RagVisibilityDashboard({
     setSelectedChunk(null);
   }
 
-  function deleteConversation(id: string) {
+  async function deleteConversation(id: string) {
+    if (deleteConversationAction) {
+      const result = await deleteConversationAction(id);
+      if (!result.ok) return;
+    }
     setConversations((current) => {
-      const next = current.filter((conversation) => conversation.id !== id);
-      saveConversations(next);
-      return next;
+      return current.filter((conversation) => conversation.id !== id);
     });
     if (id === activeConversationId) {
       conversationRef.current += 1;
@@ -353,8 +364,8 @@ export function RagVisibilityDashboard({
           ) : null}
           {activeView === "evaluations" ? (
             <EvaluationsWorkspace
-              history={[]}
-              initialRun={null}
+              history={initialEvalRuns.slice(1)}
+              initialRun={initialEvalRuns[0] ?? null}
               runAction={runEvalsAction}
               runLabel="Run evals"
             />

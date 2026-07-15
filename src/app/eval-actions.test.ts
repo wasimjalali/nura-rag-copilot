@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchAction = vi.fn();
+const fetchMutation = vi.fn();
 
 vi.mock("convex/nextjs", () => ({
   fetchAction: (...args: unknown[]) => fetchAction(...args),
+  fetchMutation: (...args: unknown[]) => fetchMutation(...args),
 }));
 
 describe("runEvalsAction", () => {
   beforeEach(() => {
     vi.resetModules();
     fetchAction.mockReset();
+    fetchMutation.mockReset();
+    fetchMutation.mockResolvedValue("run-1");
   });
 
   it("serializes stable error data for failed evaluation cases", async () => {
@@ -27,5 +31,6 @@ describe("runEvalsAction", () => {
       message: "The model service is temporarily unavailable. Try again.",
       retryable: true,
     });
+    expect(fetchMutation).toHaveBeenCalled();
   });
 });

@@ -4,6 +4,8 @@ import { extractUploadedText } from "@/lib/rag/extract-upload";
 
 const writeFile = vi.fn();
 const fetchAction = vi.fn();
+const fetchMutation = vi.fn();
+const fetchQuery = vi.fn();
 const revalidatePath = vi.fn();
 
 vi.mock("node:fs", () => {
@@ -13,6 +15,8 @@ vi.mock("node:fs", () => {
 
 vi.mock("convex/nextjs", () => ({
   fetchAction: (...args: unknown[]) => fetchAction(...args),
+  fetchMutation: (...args: unknown[]) => fetchMutation(...args),
+  fetchQuery: (...args: unknown[]) => fetchQuery(...args),
 }));
 
 vi.mock("next/cache", () => ({
@@ -239,10 +243,20 @@ describe("askGroundedQuestion", () => {
 
     const result = await askGroundedQuestion({
       question: "Can I return an opened product?",
-      history: [],
+      conversationId: null,
+      requestId: "request-1",
     });
 
     expect(result).toEqual({ ok: true, data: answer });
+    expect(fetchAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        question: "Can I return an opened product?",
+        conversationId: undefined,
+        requestId: "request-1",
+      }),
+    );
+    expect(fetchAction.mock.calls[0][1]).not.toHaveProperty("history");
   });
 
   it("returns stable provider error data instead of throwing", async () => {
@@ -253,7 +267,8 @@ describe("askGroundedQuestion", () => {
 
     const result = await askGroundedQuestion({
       question: "Can I return an opened product?",
-      history: [],
+      conversationId: null,
+      requestId: "request-2",
     });
 
     expect(result).toEqual({
@@ -269,7 +284,11 @@ describe("askGroundedQuestion", () => {
   it("returns a validation error result for an empty question", async () => {
     const askGroundedQuestion = await importAction();
 
-    const result = await askGroundedQuestion({ question: "   ", history: [] });
+    const result = await askGroundedQuestion({
+      question: "   ",
+      conversationId: null,
+      requestId: "request-3",
+    });
 
     expect(result).toEqual({
       ok: false,

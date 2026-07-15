@@ -1,8 +1,9 @@
 "use server";
 
-import { fetchAction } from "convex/nextjs";
+import { fetchAction, fetchMutation } from "convex/nextjs";
 
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import {
   MANUAL_EVAL_SET,
   type EvalCaseResult,
@@ -23,17 +24,40 @@ import {
  */
 export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
   const results: EvalCaseResult[] = [];
+  const startedAt = Date.now();
+  let runId: Id<"evalRuns">;
+
+  try {
+    runId = await fetchMutation(api.evaluations.startRun, {
+      total: MANUAL_EVAL_SET.length,
+      startedAt,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: toPublicAppError(error, {
+        code: "INTERNAL_ERROR",
+        message: "The evaluation run could not be started.",
+        retryable: true,
+      }),
+    };
+  }
 
   for (const evalCase of MANUAL_EVAL_SET) {
+    const caseStartedAt = Date.now();
     try {
       const answer: GroundedAnswerForEval = await fetchAction(
         api.ragAnswer.generateGroundedAnswer,
-        { question: evalCase.question },
+        {
+          question: evalCase.question,
+          requestId: `eval:${runId}:${evalCase.id}`,
+          persistConversation: false,
+        },
       );
 
       const outcome = evaluateCase(evalCase.assertion, answer);
 
-      results.push({
+      const result: EvalCaseResult = {
         id: evalCase.id,
         question: evalCase.question,
         category: evalCase.category,
@@ -42,6 +66,19 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
         answerType: outcome.answerType,
         citedSources: outcome.citedSources,
         detail: outcome.detail,
+      };
+      results.push(result);
+      await fetchMutation(api.evaluations.addCaseResult, {
+        runId,
+        caseId: result.id,
+        question: result.question,
+        category: result.category,
+        expectation: result.expectation,
+        status: result.status,
+        answerType: result.answerType,
+        citedSources: result.citedSources,
+        detail: result.detail,
+        durationMs: Date.now() - caseStartedAt,
       });
     } catch (error) {
       const publicError = toPublicAppError(error, {
@@ -50,7 +87,7 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
         retryable: false,
       });
 
-      results.push({
+      const result: EvalCaseResult = {
         id: evalCase.id,
         question: evalCase.question,
         category: evalCase.category,
@@ -60,14 +97,47 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
         citedSources: [],
         detail: publicError.message,
         error: publicError,
-      });
+      };
+      results.push(result);
+      await fetchMutation(api.evaluations.addCaseResult, {
+        runId,
+        caseId: result.id,
+        question: result.question,
+        category: result.category,
+        expectation: result.expectation,
+        status: result.status,
+        answerType: result.answerType,
+        citedSources: result.citedSources,
+        detail: result.detail,
+        durationMs: Date.now() - caseStartedAt,
+      }).catch(() => undefined);
     }
   }
 
+  const passed = results.filter((result) => result.status === "pass").length;
+  const finishedAt = Date.now();
+  try {
+    await fetchMutation(api.evaluations.finishRun, {
+      runId,
+      status: "completed",
+      passed,
+      finishedAt,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: toPublicAppError(error, {
+        code: "INTERNAL_ERROR",
+        message: "The evaluation results could not be saved.",
+        retryable: true,
+      }),
+    };
+  }
+
   return actionSuccess({
-    ranAt: new Date().toISOString(),
+    ranAt: new Date(finishedAt).toISOString(),
     total: results.length,
-    passed: results.filter((result) => result.status === "pass").length,
+    passed,
     results,
   });
 }
