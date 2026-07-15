@@ -166,6 +166,17 @@ export function toEmbeddingsUrl(endpoint: string) {
 }
 
 export function toSafeErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.includes("CORPUS_NOT_READY")) {
+    return "No active corpus is ready for retrieval.";
+  }
+
+  if (
+    error instanceof Error &&
+    error.message.includes("An answer is already in progress")
+  ) {
+    return "An answer is already in progress.";
+  }
+
   if (error instanceof ProviderRequestError) {
     if (error.status === 429) {
       return "The model service is rate limited. Try again shortly.";

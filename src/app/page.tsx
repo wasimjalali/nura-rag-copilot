@@ -8,6 +8,8 @@ import {
   deleteConversationAction,
   embedSyntheticDocumentsAction,
   loadConversationAction,
+  importLegacyConversationsAction,
+  promoteCorpusVersionAction,
 } from "./actions";
 import { chunkDocuments } from "@/lib/rag/chunk";
 import { loadSyntheticDocuments } from "@/lib/rag/load-documents";
@@ -36,7 +38,9 @@ export default async function Home() {
       embeddingStorageStatus={embeddingStorageStatus}
       initialConversations={conversations}
       initialEvalRuns={evalRuns}
+      importLegacyConversationsAction={importLegacyConversationsAction}
       loadConversationAction={loadConversationAction}
+      promoteCorpusAction={promoteCorpusVersionAction}
     />
   );
 }
@@ -59,7 +63,12 @@ async function getRecentEvalRuns() {
     const runs = await fetchQuery(api.evaluations.listRecent);
     return runs
       .filter((run) => run.status === "completed")
-      .map(({ runId, status, ...run }) => run);
+      .map((run) => ({
+        ranAt: run.ranAt,
+        total: run.total,
+        passed: run.passed,
+        results: run.results,
+      }));
   } catch {
     return [];
   }

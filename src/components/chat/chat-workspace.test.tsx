@@ -134,6 +134,35 @@ describe("ChatWorkspace", () => {
     );
   });
 
+  it("offers recovery for a retryable answer error", () => {
+    const onSubmit = vi.fn();
+    render(
+      <ChatWorkspace
+        askDisabled={false}
+        canReset
+        focusedEvidenceId={null}
+        onFocusEvidence={vi.fn()}
+        onNewChat={vi.fn()}
+        onOpenSources={vi.fn()}
+        onSubmit={onSubmit}
+        pendingQuestion={null}
+        ready
+        turns={[
+          {
+            id: "failed-turn",
+            question: "Can I return an opened product?",
+            answer: null,
+            error: "The model service is temporarily unavailable. Try again.",
+            errorRetryable: true,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry answer" }));
+    expect(onSubmit).toHaveBeenCalledWith("Can I return an opened product?");
+  });
+
   it("keeps feedback state local to the answer turn", () => {
     render(<ChatWorkspaceHarness />);
 

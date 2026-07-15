@@ -54,6 +54,7 @@ type RetrievalForAnswer = {
     text: string;
     tokenEstimate: number;
   }>;
+  retryCount: number;
 };
 
 type GroundedAnswerResponse = {
@@ -212,6 +213,7 @@ export const generateGroundedAnswer = action({
           retrievalMs: retrievalFinishedAt - retrievalStartedAt,
           generationMs: 0,
           response,
+          retryCount: retrieval.retryCount,
         });
         return response;
       }
@@ -222,7 +224,12 @@ export const generateGroundedAnswer = action({
         history,
       );
       const generationStartedAt = Date.now();
-      const rawAnswer = await requestChatCompletion(config, messages);
+      let answerRetryCount = 0;
+      const rawAnswer = await requestChatCompletion(config, messages, {
+        onRetry: () => {
+          answerRetryCount += 1;
+        },
+      });
       const structuredAnswer = parseStructuredGroundedAnswer(
         rawAnswer,
         citedResults,
@@ -249,6 +256,7 @@ export const generateGroundedAnswer = action({
         retrievalMs: retrievalFinishedAt - retrievalStartedAt,
         generationMs: Date.now() - generationStartedAt,
         response,
+        retryCount: retrieval.retryCount + answerRetryCount,
       });
       return response;
     } catch (error) {
@@ -312,6 +320,7 @@ async function recordAnswerOperation(
     retrievalMs: number;
     generationMs: number;
     response: GroundedAnswerResponse;
+    retryCount: number;
   },
 ) {
   const finishedAt = Date.now();
@@ -340,7 +349,7 @@ async function recordAnswerOperation(
         ),
       ).size,
     },
-    retryCount: 0,
+    retryCount: input.retryCount,
   });
 }
 
@@ -348,6 +357,7 @@ function toOperationErrorCode(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("AUTH_REQUIRED")) return "AUTH_REQUIRED" as const;
   if (message.includes("FORBIDDEN")) return "FORBIDDEN" as const;
+  if (message.includes("No active corpus")) return "CORPUS_NOT_READY" as const;
   if (message.includes("rate limited")) return "RATE_LIMITED" as const;
   if (message.includes("already in progress")) return "RATE_LIMITED" as const;
   if (message.includes("invalid response")) return "INVALID_MODEL_RESPONSE" as const;

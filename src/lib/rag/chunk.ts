@@ -1,6 +1,7 @@
 import type { DocumentChunk, KnowledgeDocument } from "./types";
 
 const PREVIEW_CREATED_AT = "2026-07-01T00:00:00.000Z";
+export const CHUNKER_VERSION = "heading-v2";
 const TARGET_WORDS = 160;
 const MAX_WORDS = 220;
 

@@ -19,6 +19,7 @@ import {
 } from "@/lib/rag/app-errors";
 import { extractUploadedText } from "@/lib/rag/extract-upload";
 import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
+import type { Conversation } from "@/lib/rag/chat-history";
 import { loadSyntheticDocuments } from "@/lib/rag/load-documents";
 import {
   toDocumentChunkRecords,
@@ -69,6 +70,21 @@ export async function embedSyntheticDocumentsAction() {
     );
   }
 
+  revalidatePath("/");
+}
+
+export async function promoteCorpusVersionAction(versionId: string) {
+  try {
+    await fetchMutation(api.corpusVersions.promoteReady, {
+      versionId: versionId as Id<"corpusVersions">,
+    });
+  } catch (error) {
+    throwPublicAppError(error, {
+      code: "INTERNAL_ERROR",
+      message: "The ready corpus could not be promoted.",
+      retryable: true,
+    });
+  }
   revalidatePath("/");
 }
 
@@ -152,6 +168,41 @@ export async function deleteConversationAction(conversationId: string) {
     return actionFailure(error, {
       code: "INTERNAL_ERROR",
       message: "The conversation could not be deleted.",
+      retryable: true,
+    });
+  }
+}
+
+export async function importLegacyConversationsAction(
+  conversations: Conversation[],
+) {
+  try {
+    await fetchMutation(api.conversations.importLegacy, {
+      conversations: conversations.slice(0, 30).map((conversation) => ({
+        legacyId: conversation.id,
+        title: conversation.title,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt,
+        turns: conversation.turns.slice(0, 50).map((turn) => ({
+          turnId: turn.id,
+          question: turn.question,
+          error: turn.error ?? undefined,
+          answer: turn.answer
+            ? {
+                answer: turn.answer.answer,
+                answerModel: turn.answer.answerModel,
+                structuredAnswer: turn.answer.structuredAnswer,
+                retrieval: turn.answer.retrieval,
+              }
+            : undefined,
+        })),
+      })),
+    });
+    return actionSuccess(null);
+  } catch (error) {
+    return actionFailure(error, {
+      code: "INTERNAL_ERROR",
+      message: "Existing local conversations could not be migrated.",
       retryable: true,
     });
   }

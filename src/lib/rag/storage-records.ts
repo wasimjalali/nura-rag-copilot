@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { CHUNKER_VERSION } from "./chunk";
 import type { DocumentChunk, KnowledgeDocument } from "./types";
 
 export type SourceDocumentRecordInput = {
@@ -14,6 +15,8 @@ export type DocumentChunkRecordInput = {
   source: string;
   section: string;
   text: string;
+  textHash: string;
+  chunkerVersion: string;
   tokenEstimate: number;
 };
 
@@ -24,6 +27,15 @@ export type EmbeddingStorageStatus = {
   lastRunStatus: "not_started" | "running" | "succeeded" | "failed";
   lastRunMessage: string | null;
   lastEmbeddedAt: number | null;
+  activeVersionId?: string | null;
+  readyVersionId?: string | null;
+  corpusStatus?:
+    | "legacy"
+    | "not_started"
+    | "processing"
+    | "ready"
+    | "active"
+    | "failed";
 };
 
 export type EmbeddingStorageStatusSummary = {
@@ -42,6 +54,9 @@ export const emptyEmbeddingStorageStatus: EmbeddingStorageStatus = {
   lastRunStatus: "not_started",
   lastRunMessage: null,
   lastEmbeddedAt: null,
+  activeVersionId: null,
+  readyVersionId: null,
+  corpusStatus: "not_started",
 };
 
 export function toSourceDocumentRecords(
@@ -63,6 +78,8 @@ export function toDocumentChunkRecords(
     source: chunk.source,
     section: chunk.section,
     text: chunk.text,
+    textHash: hashText(chunk.text),
+    chunkerVersion: CHUNKER_VERSION,
     tokenEstimate: chunk.tokenEstimate,
   }));
 }

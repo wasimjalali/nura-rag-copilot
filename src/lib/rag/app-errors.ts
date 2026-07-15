@@ -62,6 +62,16 @@ const SANITIZED_PROVIDER_ERRORS: PublicAppError[] = [
     message: "The model request was rejected.",
     retryable: false,
   },
+  {
+    code: "CORPUS_NOT_READY",
+    message: "No active corpus is ready for retrieval.",
+    retryable: false,
+  },
+  {
+    code: "RATE_LIMITED",
+    message: "An answer is already in progress.",
+    retryable: true,
+  },
 ];
 
 export function toPublicAppError(
@@ -77,6 +87,20 @@ export function toPublicAppError(
   }
 
   if (error instanceof Error) {
+    if (error.message.includes("AUTH_REQUIRED")) {
+      return {
+        code: "AUTH_REQUIRED",
+        message: "Sign in to continue.",
+        retryable: false,
+      };
+    }
+    if (error.message.includes("FORBIDDEN")) {
+      return {
+        code: "FORBIDDEN",
+        message: "You do not have permission to perform this action.",
+        retryable: false,
+      };
+    }
     const providerError = SANITIZED_PROVIDER_ERRORS.find(({ message }) =>
       error.message.includes(message),
     );

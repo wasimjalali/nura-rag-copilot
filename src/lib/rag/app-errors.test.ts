@@ -59,6 +59,8 @@ describe("public application errors", () => {
       false,
     ],
     ["The model request was rejected.", "INTERNAL_ERROR", false],
+    ["No active corpus is ready for retrieval.", "CORPUS_NOT_READY", false],
+    ["An answer is already in progress.", "RATE_LIMITED", true],
   ] as const)(
     "maps a sanitized provider message to %s",
     (message, code, retryable) => {
@@ -91,6 +93,19 @@ describe("public application errors", () => {
         message: "The model service is temporarily unavailable.",
         retryable: true,
       },
+    });
+  });
+
+  it("maps backend authorization markers to safe recovery copy", () => {
+    expect(toPublicAppError(new Error("ConvexError: AUTH_REQUIRED"))).toEqual({
+      code: "AUTH_REQUIRED",
+      message: "Sign in to continue.",
+      retryable: false,
+    });
+    expect(toPublicAppError(new Error("ConvexError: FORBIDDEN"))).toEqual({
+      code: "FORBIDDEN",
+      message: "You do not have permission to perform this action.",
+      retryable: false,
     });
   });
 });

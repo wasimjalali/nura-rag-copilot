@@ -93,7 +93,7 @@ export const getById = query({
               results: evidence
                 .slice()
                 .sort((left, right) => left.rank - right.rank)
-                .map(({ _id, _creationTime, messageId, ...item }) => item),
+                .map(toEvidenceSnapshot),
             },
             conversationId: conversation._id,
             assistantMessageId: assistant._id,
@@ -106,6 +106,9 @@ export const getById = query({
           question: user.content,
           answer: null,
           error: "The previous answer could not be completed.",
+          errorRetryable:
+            assistant.errorCode === "RATE_LIMITED" ||
+            assistant.errorCode === "PROVIDER_TEMPORARY",
         });
       }
       index += 1;
@@ -147,6 +150,139 @@ export const remove = mutation({
     return null;
   },
 });
+
+export const importLegacy = mutation({
+  args: {
+    conversations: v.array(
+      v.object({
+        legacyId: v.string(),
+        title: v.string(),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+        turns: v.array(
+          v.object({
+            turnId: v.string(),
+            question: v.string(),
+            error: v.optional(v.string()),
+            answer: v.optional(
+              v.object({
+                answer: v.string(),
+                answerModel: v.string(),
+                structuredAnswer: v.object({
+                  answerType: v.union(
+                    v.literal("grounded"),
+                    v.literal("insufficient_evidence"),
+                  ),
+                  paragraphs: v.array(
+                    v.object({
+                      text: v.string(),
+                      citations: v.array(v.string()),
+                    }),
+                  ),
+                }),
+                retrieval: v.object({
+                  embeddingModel: v.string(),
+                  embeddingDimensions: v.number(),
+                  results: v.array(
+                    v.object({
+                      rank: v.number(),
+                      score: v.number(),
+                      chunkId: v.string(),
+                      source: v.string(),
+                      section: v.string(),
+                      text: v.string(),
+                      tokenEstimate: v.number(),
+                      citationLabel: v.string(),
+                    }),
+                  ),
+                }),
+              }),
+            ),
+          }),
+        ),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireActor(ctx);
+    let imported = 0;
+    for (const legacy of args.conversations.slice(0, 30)) {
+      const existing = await ctx.db
+        .query("conversations")
+        .withIndex("by_owner_legacy", (q) =>
+          q.eq("ownerSubject", actor.subject).eq("legacyId", legacy.legacyId),
+        )
+        .unique();
+      if (existing) continue;
+      validateLegacyConversation(legacy);
+      const conversationId = await ctx.db.insert("conversations", {
+        ownerSubject: actor.subject,
+        legacyId: legacy.legacyId,
+        title: legacy.title,
+        createdAt: legacy.createdAt,
+        updatedAt: legacy.updatedAt,
+      });
+      for (const [index, turn] of legacy.turns.slice(0, 50).entries()) {
+        const createdAt = legacy.createdAt + index * 2;
+        await ctx.db.insert("messages", {
+          conversationId,
+          role: "user",
+          content: turn.question,
+          status: "completed",
+          createdAt,
+          updatedAt: createdAt,
+        });
+        const assistantMessageId = await ctx.db.insert("messages", {
+          conversationId,
+          requestId: `legacy:${legacy.legacyId}:${turn.turnId}`,
+          role: "assistant",
+          content: turn.answer?.answer ?? "",
+          status: turn.answer ? "completed" : "failed",
+          answerType: turn.answer?.structuredAnswer.answerType,
+          answerModel: turn.answer?.answerModel,
+          embeddingModel: turn.answer?.retrieval.embeddingModel,
+          embeddingDimensions: turn.answer?.retrieval.embeddingDimensions,
+          structuredParagraphs: turn.answer?.structuredAnswer.paragraphs,
+          errorCode: turn.answer ? undefined : "INTERNAL_ERROR",
+          createdAt: createdAt + 1,
+          updatedAt: createdAt + 1,
+        });
+        for (const evidence of turn.answer?.retrieval.results ?? []) {
+          await ctx.db.insert("messageEvidence", {
+            messageId: assistantMessageId,
+            ...evidence,
+          });
+        }
+      }
+      imported += 1;
+    }
+    return { imported };
+  },
+});
+
+function validateLegacyConversation(legacy: {
+  title: string;
+  turns: Array<{
+    question: string;
+    error?: string;
+    answer?: { answer: string; retrieval: { results: Array<{ text: string }> } };
+  }>;
+}) {
+  if (legacy.title.length > 120) throw new Error("VALIDATION_FAILED");
+  for (const turn of legacy.turns) {
+    if (turn.question.length > 2000 || (turn.error?.length ?? 0) > 1000) {
+      throw new Error("VALIDATION_FAILED");
+    }
+    if ((turn.answer?.answer.length ?? 0) > 50_000) {
+      throw new Error("VALIDATION_FAILED");
+    }
+    if (
+      turn.answer?.retrieval.results.some((item) => item.text.length > 50_000)
+    ) {
+      throw new Error("VALIDATION_FAILED");
+    }
+  }
+}
 
 export const getHistory = internalQuery({
   args: { conversationId: v.id("conversations"), ownerSubject: v.string() },
@@ -331,13 +467,35 @@ export const getCompletedTurn = internalQuery({
         results: evidence
           .slice()
           .sort((left, right) => left.rank - right.rank)
-          .map(({ _id, _creationTime, messageId, ...item }) => item),
+          .map(toEvidenceSnapshot),
       },
       conversationId: conversation._id,
       assistantMessageId: message._id,
     };
   },
 });
+
+function toEvidenceSnapshot(item: {
+  rank: number;
+  score: number;
+  chunkId: string;
+  source: string;
+  section: string;
+  text: string;
+  tokenEstimate: number;
+  citationLabel: string;
+}) {
+  return {
+    rank: item.rank,
+    score: item.score,
+    chunkId: item.chunkId,
+    source: item.source,
+    section: item.section,
+    text: item.text,
+    tokenEstimate: item.tokenEstimate,
+    citationLabel: item.citationLabel,
+  };
+}
 
 export const failTurn = internalMutation({
   args: { assistantMessageId: v.id("messages"), errorCode: v.string(), now: v.number() },

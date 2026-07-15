@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { KnowledgeWorkspace } from "./knowledge-workspace";
 
@@ -236,5 +236,29 @@ describe("KnowledgeWorkspace", () => {
       .closest("article");
     expect(chunkPreview).not.toBeNull();
     expect(within(chunkPreview!).getByText("Failed")).toBeInTheDocument();
+  });
+
+  it("shows a ready corpus and promotes it explicitly", async () => {
+    const promoteAction = vi.fn().mockResolvedValue(undefined);
+    render(
+      <KnowledgeWorkspace
+        addDocumentAction={async () => {}}
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        embeddingStorageStatus={{
+          ...embeddingStorageStatus,
+          corpusStatus: "ready",
+          readyVersionId: "version-1",
+        }}
+        promoteAction={promoteAction}
+      />,
+    );
+
+    expect(screen.getAllByText("Ready to promote").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Promote corpus" }));
+    await waitFor(() => {
+      expect(promoteAction).toHaveBeenCalledWith("version-1");
+    });
   });
 });

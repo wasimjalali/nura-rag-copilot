@@ -3,18 +3,24 @@ import { v } from "convex/values";
 
 export default defineSchema({
   sourceDocuments: defineTable({
+    corpusVersionId: v.optional(v.id("corpusVersions")),
     source: v.string(),
     title: v.string(),
     textHash: v.string(),
     wordCount: v.number(),
     updatedAt: v.number(),
-  }).index("by_source", ["source"]),
+  })
+    .index("by_source", ["source"])
+    .index("by_version_source", ["corpusVersionId", "source"]),
 
   documentChunks: defineTable({
+    corpusVersionId: v.optional(v.id("corpusVersions")),
     chunkId: v.string(),
     source: v.string(),
     section: v.string(),
     text: v.string(),
+    textHash: v.optional(v.string()),
+    chunkerVersion: v.optional(v.string()),
     tokenEstimate: v.number(),
     embedding: v.optional(v.array(v.float64())),
     embeddingModel: v.optional(v.string()),
@@ -24,12 +30,21 @@ export default defineSchema({
   })
     .index("by_chunk_id", ["chunkId"])
     .index("by_source", ["source"])
+    .index("by_version_chunk", ["corpusVersionId", "chunkId"])
+    .index("by_reuse_key", [
+      "textHash",
+      "chunkerVersion",
+      "embeddingModel",
+      "embeddingDimensions",
+    ])
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
       dimensions: 1536,
+      filterFields: ["corpusVersionId"],
     }),
 
   embeddingRuns: defineTable({
+    corpusVersionId: v.optional(v.id("corpusVersions")),
     status: v.union(
       v.literal("running"),
       v.literal("succeeded"),
@@ -43,13 +58,49 @@ export default defineSchema({
     embeddedChunks: v.number(),
   }).index("by_started_at", ["startedAt"]),
 
+  corpora: defineTable({
+    name: v.string(),
+    activeVersionId: v.optional(v.id("corpusVersions")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_name", ["name"]),
+
+  corpusVersions: defineTable({
+    corpusId: v.id("corpora"),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("processing"),
+      v.literal("ready"),
+      v.literal("active"),
+      v.literal("failed"),
+      v.literal("archived"),
+    ),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    readyAt: v.optional(v.number()),
+    activatedAt: v.optional(v.number()),
+    errorCode: v.optional(v.string()),
+    documentCount: v.number(),
+    chunkCount: v.number(),
+    embeddedChunkCount: v.number(),
+    reusedChunkCount: v.number(),
+    embeddingModel: v.string(),
+    embeddingDimensions: v.number(),
+    chunkerVersion: v.string(),
+  })
+    .index("by_corpus_created", ["corpusId", "createdAt"])
+    .index("by_status_updated", ["status", "updatedAt"]),
+
   conversations: defineTable({
     ownerSubject: v.string(),
+    legacyId: v.optional(v.string()),
     title: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_owner_updated", ["ownerSubject", "updatedAt"]),
+    .index("by_owner_updated", ["ownerSubject", "updatedAt"])
+    .index("by_owner_legacy", ["ownerSubject", "legacyId"]),
 
   messages: defineTable({
     conversationId: v.id("conversations"),

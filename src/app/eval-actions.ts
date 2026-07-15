@@ -123,6 +123,12 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
       passed,
       finishedAt,
     });
+    await fetchMutation(api.operations.recordEvaluation, {
+      requestId: `evaluation:${runId}`,
+      status: "succeeded",
+      startedAt,
+      finishedAt,
+    });
   } catch (error) {
     return {
       ok: false,

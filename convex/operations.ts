@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
-import { internalMutation } from "./_generated/server";
+import { internalMutation, mutation } from "./_generated/server";
+import { requireActor, requireRole } from "./auth";
 
 const operationType = v.union(
   v.literal("answer"),
@@ -51,6 +52,39 @@ const tokenUsage = v.object({
   totalTokens: v.optional(v.number()),
 });
 
+export function buildEvaluationOperationRecord(input: {
+  requestId: string;
+  actorSubject: string;
+  status: "running" | "succeeded" | "failed";
+  startedAt: number;
+  finishedAt: number;
+  errorCode?:
+    | "AUTH_REQUIRED"
+    | "FORBIDDEN"
+    | "RATE_LIMITED"
+    | "CORPUS_NOT_READY"
+    | "PROVIDER_TEMPORARY"
+    | "INVALID_MODEL_RESPONSE"
+    | "VALIDATION_FAILED"
+    | "INTERNAL_ERROR";
+}) {
+  return {
+    requestId: input.requestId,
+    actorSubject: input.actorSubject,
+    operationType: "evaluation" as const,
+    status: input.status,
+    modelIdentifiers: {},
+    timings: {
+      startedAt: input.startedAt,
+      finishedAt: input.finishedAt,
+      durationMs: input.finishedAt - input.startedAt,
+    },
+    retryCount: 0,
+    errorCode: input.errorCode,
+    createdAt: input.startedAt,
+  };
+}
+
 export const recordOperation = internalMutation({
   args: {
     requestId: v.string(),
@@ -71,5 +105,26 @@ export const recordOperation = internalMutation({
       ...args,
       createdAt: args.timings.startedAt,
     });
+  },
+});
+
+export const recordEvaluation = mutation({
+  args: {
+    requestId: v.string(),
+    status: operationStatus,
+    startedAt: v.number(),
+    finishedAt: v.number(),
+    errorCode: v.optional(appErrorCode),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireActor(ctx);
+    requireRole(actor, ["knowledge_manager", "operator"]);
+    return await ctx.db.insert(
+      "operations",
+      buildEvaluationOperationRecord({
+        ...args,
+        actorSubject: actor.subject,
+      }),
+    );
   },
 });

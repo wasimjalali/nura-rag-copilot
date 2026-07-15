@@ -12,6 +12,7 @@ import type { EmbeddingStorageStatus } from "@/lib/rag/storage-records";
 export type DocumentStatus =
   | "active"
   | "processing"
+  | "ready"
   | "needs_indexing"
   | "failed";
 
@@ -22,6 +23,7 @@ export type KnowledgeWorkspaceProps = {
   embedAction: () => Promise<void>;
   embeddingStorageStatus: EmbeddingStorageStatus;
   indexActionLabel?: string;
+  promoteAction?: (versionId: string) => Promise<void>;
 };
 
 type DocumentInventoryItem = {
@@ -35,6 +37,7 @@ type DocumentInventoryItem = {
 const STATUS_COPY: Record<DocumentStatus, string> = {
   active: "Active",
   processing: "Processing",
+  ready: "Ready to promote",
   needs_indexing: "Needs indexing",
   failed: "Failed",
 };
@@ -42,6 +45,7 @@ const STATUS_COPY: Record<DocumentStatus, string> = {
 const STATUS_TONE: Record<DocumentStatus, StatusTone> = {
   active: "success",
   processing: "neutral",
+  ready: "success",
   needs_indexing: "warning",
   failed: "danger",
 };
@@ -53,6 +57,7 @@ export function KnowledgeWorkspace({
   embedAction,
   embeddingStorageStatus,
   indexActionLabel = "Refresh indexing",
+  promoteAction,
 }: KnowledgeWorkspaceProps) {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] =
@@ -64,6 +69,7 @@ export function KnowledgeWorkspace({
   const [sort, setSort] = useState<"title" | "source" | "chunks">("title");
   const [isEmbedding, setIsEmbedding] = useState(false);
   const [embedError, setEmbedError] = useState<string | null>(null);
+  const [isPromoting, setIsPromoting] = useState(false);
 
   const inventory = useMemo(() => {
     const chunksBySource = new Map<string, DocumentChunk[]>();
@@ -130,6 +136,22 @@ export function KnowledgeWorkspace({
       );
     } finally {
       setIsEmbedding(false);
+    }
+  }
+
+  async function handlePromote() {
+    const readyVersionId = embeddingStorageStatus.readyVersionId;
+    if (!promoteAction || !readyVersionId) return;
+    setEmbedError(null);
+    setIsPromoting(true);
+    try {
+      await promoteAction(readyVersionId);
+    } catch (caught) {
+      setEmbedError(
+        caught instanceof Error ? caught.message : "Corpus promotion failed.",
+      );
+    } finally {
+      setIsPromoting(false);
     }
   }
 
@@ -218,6 +240,17 @@ export function KnowledgeWorkspace({
               <LayersIcon className="size-4" />
               {isEmbedding ? "Indexing" : indexActionLabel}
             </button>
+            {embeddingStorageStatus.readyVersionId && promoteAction ? (
+              <button
+                className="btn btn-primary min-h-10 px-3.5 text-sm"
+                disabled={isPromoting || isEmbedding}
+                onClick={handlePromote}
+                type="button"
+              >
+                <UploadIcon className="size-4" />
+                {isPromoting ? "Promoting" : "Promote corpus"}
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -616,6 +649,9 @@ function getDocumentStatus({
   if (isEmbedding || embeddingStorageStatus.lastRunStatus === "running") {
     return "processing";
   }
+  if (embeddingStorageStatus.corpusStatus === "ready") {
+    return "ready";
+  }
   if (embeddingStorageStatus.lastRunStatus === "failed") {
     return "failed";
   }
@@ -642,6 +678,9 @@ function ingestionNote(status: DocumentStatus) {
   if (status === "processing") {
     return "The current indexing run is in progress. This document is not ready for retrieval.";
   }
+  if (status === "ready") {
+    return "All chunks are embedded in a draft. Promote it to make retrieval use this version.";
+  }
   if (status === "failed") {
     return "The latest indexing run failed. This document is not ready for retrieval.";
   }
@@ -655,6 +694,9 @@ function chunkStateLabel(status: DocumentStatus, chunkCount: number) {
   }
   if (status === "processing") {
     return `${count} processing`;
+  }
+  if (status === "ready") {
+    return `${count} ready to promote`;
   }
   if (status === "failed") {
     return `${count} not indexed`;

@@ -33,6 +33,8 @@ import { WorkspaceNav } from "@/components/workspace/workspace-nav";
 import {
   createId,
   deriveConversationTitle,
+  loadLegacyConversationsForMigration,
+  markLegacyConversationMigrationComplete,
   MAX_CONVERSATIONS,
   type ChatTurn,
   type Conversation,
@@ -60,6 +62,10 @@ type RagVisibilityDashboardProps = {
   deleteConversationAction?: (
     conversationId: string,
   ) => Promise<ActionResult<null>>;
+  promoteCorpusAction?: (versionId: string) => Promise<void>;
+  importLegacyConversationsAction?: (
+    conversations: Conversation[],
+  ) => Promise<ActionResult<null>>;
 };
 
 export function RagVisibilityDashboard({
@@ -73,6 +79,8 @@ export function RagVisibilityDashboard({
   initialEvalRuns = [],
   loadConversationAction,
   deleteConversationAction,
+  promoteCorpusAction,
+  importLegacyConversationsAction,
 }: RagVisibilityDashboardProps) {
   const [activeView, setActiveView] = useState<WorkspaceView>("chat");
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -96,6 +104,20 @@ export function RagVisibilityDashboard({
   // abandoned conversation is dropped instead of landing in the current one.
   const conversationRef = useRef(0);
   const turnSeq = useRef(0);
+
+  useEffect(() => {
+    if (!importLegacyConversationsAction) return;
+    const legacy = loadLegacyConversationsForMigration();
+    if (legacy.length === 0) {
+      markLegacyConversationMigrationComplete();
+      return;
+    }
+    void importLegacyConversationsAction(legacy).then((result) => {
+      if (!result.ok) return;
+      markLegacyConversationMigrationComplete();
+      window.location.reload();
+    });
+  }, [importLegacyConversationsAction]);
 
   const retrievalReady = embeddingStorageStatus.embeddedChunks > 0;
 
@@ -160,6 +182,7 @@ export function RagVisibilityDashboard({
             question,
             answer: null,
             error: result.error.message,
+            errorRetryable: result.error.retryable,
           },
         ];
         setTurns(nextTurns);
@@ -357,6 +380,7 @@ export function RagVisibilityDashboard({
               documents={documents}
               embedAction={embedAction}
               embeddingStorageStatus={embeddingStorageStatus}
+              promoteAction={promoteCorpusAction}
               indexActionLabel={
                 retrievalReady ? "Re-embed corpus" : "Store and embed chunks"
               }

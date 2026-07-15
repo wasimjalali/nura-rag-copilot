@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { internalMutation, query } from "./_generated/server";
+import { requireActor } from "./auth";
 
 type StorageStatus = {
   storedDocuments: number;
@@ -9,6 +10,9 @@ type StorageStatus = {
   lastRunStatus: "not_started" | "running" | "succeeded" | "failed";
   lastRunMessage: string | null;
   lastEmbeddedAt: number | null;
+  activeVersionId: string | null;
+  readyVersionId: string | null;
+  corpusStatus: "legacy" | "not_started" | "processing" | "ready" | "active" | "failed";
 };
 
 const nullableNumber = v.union(v.number(), v.null());
@@ -52,10 +56,42 @@ export const getStorageStatus = query({
     lastRunStatus: runStatus,
     lastRunMessage: nullableString,
     lastEmbeddedAt: nullableNumber,
+    activeVersionId: nullableString,
+    readyVersionId: nullableString,
+    corpusStatus: v.union(
+      v.literal("legacy"),
+      v.literal("not_started"),
+      v.literal("processing"),
+      v.literal("ready"),
+      v.literal("active"),
+      v.literal("failed"),
+    ),
   }),
   handler: async (ctx): Promise<StorageStatus> => {
-    const documents = await ctx.db.query("sourceDocuments").collect();
-    const chunks = await ctx.db.query("documentChunks").collect();
+    await requireActor(ctx);
+    const corpus = await ctx.db
+      .query("corpora")
+      .withIndex("by_name", (q) => q.eq("name", "default"))
+      .unique();
+    const versions = corpus
+      ? await ctx.db
+          .query("corpusVersions")
+          .withIndex("by_corpus_created", (q) => q.eq("corpusId", corpus._id))
+          .order("desc")
+          .collect()
+      : [];
+    const readyVersion = versions.find((version) => version.status === "ready");
+    const latestVersion = versions[0];
+    const allDocuments = await ctx.db.query("sourceDocuments").collect();
+    const allChunks = await ctx.db.query("documentChunks").collect();
+    const documents = corpus?.activeVersionId
+      ? allDocuments.filter(
+          (document) => document.corpusVersionId === corpus.activeVersionId,
+        )
+      : allDocuments.filter((document) => document.corpusVersionId === undefined);
+    const chunks = corpus?.activeVersionId
+      ? allChunks.filter((chunk) => chunk.corpusVersionId === corpus.activeVersionId)
+      : allChunks.filter((chunk) => chunk.corpusVersionId === undefined);
     const lastRun = await ctx.db
       .query("embeddingRuns")
       .withIndex("by_started_at")
@@ -84,6 +120,19 @@ export const getStorageStatus = query({
       lastRunStatus,
       lastRunMessage: lastRun?.message ?? null,
       lastEmbeddedAt,
+      activeVersionId: corpus?.activeVersionId ?? null,
+      readyVersionId: readyVersion?._id ?? null,
+      corpusStatus: latestVersion?.status === "processing"
+          ? "processing"
+          : readyVersion
+            ? "ready"
+            : corpus?.activeVersionId
+              ? "active"
+            : latestVersion?.status === "failed"
+              ? "failed"
+              : chunks.some((chunk) => chunk.embedding !== undefined)
+                ? "legacy"
+                : "not_started",
     };
   },
 });
@@ -193,6 +242,7 @@ const EMBEDDING_RUN_STALENESS_MS = 10 * 60 * 1000;
 
 export const startEmbeddingRun = internalMutation({
   args: {
+    corpusVersionId: v.optional(v.id("corpusVersions")),
     documents: v.number(),
     chunks: v.number(),
     startedAt: v.number(),
@@ -213,6 +263,7 @@ export const startEmbeddingRun = internalMutation({
     }
 
     return await ctx.db.insert("embeddingRuns", {
+      corpusVersionId: args.corpusVersionId,
       status: "running",
       startedAt: args.startedAt,
       documents: args.documents,

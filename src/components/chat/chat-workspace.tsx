@@ -98,7 +98,14 @@ export function ChatWorkspace({
                     <UserMessage text={turn.question} />
                     <div aria-live={isLast ? "polite" : undefined}>
                       {turn.error ? (
-                        <ErrorMessage message={turn.error} />
+                        <ErrorMessage
+                          message={turn.error}
+                          onRetry={
+                            turn.errorRetryable
+                              ? () => send(turn.question)
+                              : undefined
+                          }
+                        />
                       ) : turn.answer ? (
                         <ConversationTurn
                           activeEvidenceId={focusedEvidenceId}
@@ -212,17 +219,29 @@ function SetupNotice() {
   );
 }
 
-function ErrorMessage({ message }: { message: string }) {
+function ErrorMessage({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   return (
     <div className="msg-in flex gap-3">
       <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-brand shadow-sm">
         <NuraMark className="size-5" tone="dark" />
       </span>
-      <div
-        className="flex-1 rounded-2xl border border-danger/25 bg-danger-soft px-4 py-3 text-sm font-medium text-danger"
-        role="alert"
-      >
-        {message}
+      <div className="flex-1 rounded-2xl border border-danger/25 bg-danger-soft px-4 py-3" role="alert">
+        <p className="text-sm font-medium text-danger">{message}</p>
+        {onRetry ? (
+          <button
+            className="btn btn-secondary mt-3 min-h-10 px-3 text-sm"
+            onClick={onRetry}
+            type="button"
+          >
+            Retry answer
+          </button>
+        ) : null}
       </div>
     </div>
   );
