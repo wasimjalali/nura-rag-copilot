@@ -20,7 +20,16 @@ import type {
   EvalRunResult,
 } from "@/lib/eval/manual-eval-set";
 import { runEvalsAction } from "@/app/eval-actions";
-import { NuraMark } from "@/components/nura-logo";
+import {
+  buildEvidenceItems as buildChatEvidenceItems,
+  ChatWorkspace,
+  filterCitedEvidence as filterChatCitedEvidence,
+} from "@/components/chat/chat-workspace";
+import {
+  EvidenceChunkDialog,
+  EvidenceInspector,
+  type EvidenceItem,
+} from "@/components/chat/evidence-inspector";
 import { Dialog } from "@/components/ui/dialog";
 import { StatusLabel } from "@/components/ui/status-label";
 import {
@@ -40,6 +49,7 @@ import {
   SourceIcon,
   UploadIcon,
 } from "@/components/icons";
+import { NuraMark } from "@/components/nura-logo";
 import { DEFAULT_NURA_CONFIG } from "@/lib/nura-config";
 import {
   createId,
@@ -50,6 +60,13 @@ import {
   type ChatTurn,
   type Conversation,
 } from "@/lib/rag/chat-history";
+
+const SAMPLE_QUESTIONS = [
+  "Can customers return opened products?",
+  "Does express shipping change the order cutoff?",
+  "How much can an agent discount without manager approval?",
+  "How do I pause a subscription for a month?",
+];
 
 type AskAction = (input: {
   question: string;
@@ -65,26 +82,6 @@ type RagVisibilityDashboardProps = {
   embeddingStorageStatus: EmbeddingStorageStatus;
 };
 
-type EvidenceItem = {
-  id: string;
-  label: string;
-  labelNumber: string;
-  source: string;
-  section: string;
-  text: string;
-  score: number;
-  scoreLabel: string;
-  rankLabel: string;
-  tokenEstimate: number;
-};
-
-const SAMPLE_QUESTIONS = [
-  "Can customers return opened products?",
-  "Does express shipping change the order cutoff?",
-  "How much can an agent discount without manager approval?",
-  "How do I pause a subscription for a month?",
-];
-
 export function RagVisibilityDashboard({
   documents,
   chunks,
@@ -98,6 +95,7 @@ export function RagVisibilityDashboard({
   const [selectedChunk, setSelectedChunk] = useState<EvidenceItem | null>(null);
   const [focusToken, setFocusToken] = useState(0);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusText, setFocusText] = useState<string | null>(null);
 
   // Conversation state lives here so the sources panel (a sibling of the chat)
   // can read the active turn's evidence.
@@ -129,11 +127,11 @@ export function RagVisibilityDashboard({
     [turns, activeTurnId],
   );
   const retrievedItems = useMemo(
-    () => buildEvidenceItems(activeAnswer),
+    () => buildChatEvidenceItems(activeAnswer),
     [activeAnswer],
   );
   const citedItems = useMemo(
-    () => filterCitedEvidence(activeAnswer, retrievedItems),
+    () => filterChatCitedEvidence(activeAnswer, retrievedItems),
     [activeAnswer, retrievedItems],
   );
 
@@ -221,6 +219,7 @@ export function RagVisibilityDashboard({
     setActiveConversationId(null);
     setSourcesOpen(false);
     setFocusId(null);
+    setFocusText(null);
     setSelectedChunk(null);
   }
 
@@ -236,6 +235,7 @@ export function RagVisibilityDashboard({
     setActiveTurnId(null);
     setSourcesOpen(false);
     setFocusId(null);
+    setFocusText(null);
     setSelectedChunk(null);
   }
 
@@ -253,6 +253,7 @@ export function RagVisibilityDashboard({
       setActiveTurnId(null);
       setSourcesOpen(false);
       setFocusId(null);
+      setFocusText(null);
     }
   }
 
@@ -261,10 +262,15 @@ export function RagVisibilityDashboard({
     setSourcesOpen(true);
   }
 
-  function focusEvidence(turnId: string, id: string) {
+  function focusEvidence(
+    turnId: string,
+    id: string,
+    matchedSentence: string,
+  ) {
     setActiveTurnId(turnId);
     setSourcesOpen(true);
     setFocusId(id);
+    setFocusText(matchedSentence);
     setFocusToken((token) => token + 1);
   }
 
@@ -301,13 +307,14 @@ export function RagVisibilityDashboard({
               onClick={() => setSourcesOpen(false)}
               type="button"
             />
-            <SourcesPanel
+            <EvidenceInspector
               citedItems={citedItems}
               focusId={focusId}
+              focusText={focusText}
               focusToken={focusToken}
               onClose={() => setSourcesOpen(false)}
               onOpenChunk={setSelectedChunk}
-              retrievedCount={retrievedItems.length}
+              retrievedItems={retrievedItems}
             />
           </>
         ) : undefined
@@ -328,10 +335,10 @@ export function RagVisibilityDashboard({
       onSelectView={selectWorkspaceView}
     >
       {activeView === "chat" ? (
-        <ChatView
-          activeEvidenceId={focusId}
+        <ChatWorkspace
           askDisabled={!retrievalReady}
           canReset={turns.length > 0 || pendingQuestion !== null}
+          focusedEvidenceId={focusId}
           onFocusEvidence={focusEvidence}
           onNewChat={startNewChat}
           onOpenSources={openSources}
@@ -356,7 +363,11 @@ export function RagVisibilityDashboard({
       )}
 
       {selectedChunk ? (
-        <ChunkDialog item={selectedChunk} onClose={() => setSelectedChunk(null)} />
+        <EvidenceChunkDialog
+          focusText={focusText}
+          item={selectedChunk}
+          onClose={() => setSelectedChunk(null)}
+        />
       ) : null}
     </WorkspaceShell>
   );

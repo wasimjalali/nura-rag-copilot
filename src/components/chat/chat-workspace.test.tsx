@@ -1,0 +1,194 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { useMemo, useState } from "react";
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  buildEvidenceItems,
+  ChatWorkspace,
+  filterCitedEvidence,
+} from "./chat-workspace";
+import { EvidenceInspector } from "./evidence-inspector";
+import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
+import type { ChatTurn } from "@/lib/rag/chat-history";
+
+const answerWithFiveRetrievedAndOneCited: GroundedAnswerResponse = {
+  question: "Can customers return opened products?",
+  answer: "Opened products may be returned within 30 days. [1]",
+  answerModel: "gpt-5.4-mini",
+  structuredAnswer: {
+    answerType: "grounded",
+    paragraphs: [
+      {
+        text: "Opened products may be returned within 30 days.",
+        citations: ["[1]"],
+      },
+    ],
+  },
+  retrieval: {
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+    results: [
+      {
+        rank: 1,
+        score: 0.91,
+        chunkId: "return_policy__chunk_001",
+        source: "return_policy.md",
+        section: "Opened products",
+        text: "Opened products may be returned within 30 days.",
+        tokenEstimate: 11,
+        citationLabel: "[1]",
+      },
+      ...Array.from({ length: 4 }, (_, index) => ({
+        rank: index + 2,
+        score: 0.8 - index * 0.05,
+        chunkId: `shipping_policy__chunk_00${index + 2}`,
+        source: "shipping_policy.md",
+        section: `Shipping cutoff ${index + 1}`,
+        text: `Shipping policy detail ${index + 1}.`,
+        tokenEstimate: 9,
+        citationLabel: `[${index + 2}]`,
+      })),
+    ],
+  },
+};
+
+function ChatWorkspaceHarness({
+  answer = answerWithFiveRetrievedAndOneCited,
+  onSubmit = vi.fn(),
+}: {
+  answer?: GroundedAnswerResponse;
+  onSubmit?: (question: string) => void;
+}) {
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const evidence = useMemo(() => buildEvidenceItems(answer), [answer]);
+  const citedEvidence = useMemo(
+    () => filterCitedEvidence(answer, evidence),
+    [answer, evidence],
+  );
+  const turns: ChatTurn[] = [
+    {
+      id: "turn_1",
+      question: answer.question,
+      answer,
+      error: null,
+    },
+  ];
+
+  return (
+    <>
+      <ChatWorkspace
+        askDisabled={false}
+        canReset
+        focusedEvidenceId={focusId}
+        onFocusEvidence={(_turnId, evidenceId) => {
+          setFocusId(evidenceId);
+          setSourcesOpen(true);
+        }}
+        onNewChat={vi.fn()}
+        onOpenSources={() => setSourcesOpen(true)}
+        onSubmit={onSubmit}
+        pendingQuestion={null}
+        ready
+        turns={turns}
+      />
+      {sourcesOpen ? (
+        <EvidenceInspector
+          citedItems={citedEvidence}
+          focusId={focusId}
+          onClose={() => setSourcesOpen(false)}
+          onOpenChunk={vi.fn()}
+          retrievedItems={evidence}
+        />
+      ) : null}
+    </>
+  );
+}
+
+describe("ChatWorkspace", () => {
+  it("copies the grounded answer", () => {
+    const writeText = vi.fn();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(<ChatWorkspaceHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy answer" }));
+
+    expect(writeText).toHaveBeenCalledWith(
+      "Opened products may be returned within 30 days. [1]",
+    );
+    expect(screen.getByRole("button", { name: "Copied answer" })).toBeInTheDocument();
+  });
+
+  it("retries with the assistant turn's original question", () => {
+    const onSubmit = vi.fn();
+    render(<ChatWorkspaceHarness onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry question" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Can customers return opened products?",
+    );
+  });
+
+  it("keeps feedback state local to the answer turn", () => {
+    render(<ChatWorkspaceHarness />);
+
+    const helpful = screen.getByRole("button", { name: "Mark answer helpful" });
+    const unhelpful = screen.getByRole("button", {
+      name: "Mark answer unhelpful",
+    });
+    fireEvent.click(helpful);
+
+    expect(helpful).toHaveAttribute("aria-pressed", "true");
+    expect(unhelpful).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(unhelpful);
+
+    expect(helpful).toHaveAttribute("aria-pressed", "false");
+    expect(unhelpful).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows cited and retrieved evidence separately", () => {
+    render(<ChatWorkspaceHarness />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Sources: 1 cited of 5 retrieved",
+      }),
+    );
+
+    expect(screen.getByRole("tab", { name: "Cited 1" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Retrieved 5" }));
+
+    expect(
+      screen.getAllByRole("button", { name: /View full chunk/ }),
+    ).toHaveLength(5);
+  });
+
+  it("names citation controls with the document and section", () => {
+    render(<ChatWorkspaceHarness />);
+
+    expect(
+      screen.getByRole("button", {
+        name: "Open source return_policy.md, Opened products",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the mobile composer compact while preserving a 40px send target", () => {
+    render(<ChatWorkspaceHarness />);
+
+    expect(screen.getByLabelText("Question")).toHaveClass("min-h-[48px]");
+    expect(screen.getByRole("button", { name: "Generate answer" })).toHaveClass(
+      "size-10",
+    );
+  });
+});

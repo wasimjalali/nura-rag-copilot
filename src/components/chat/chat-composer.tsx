@@ -1,0 +1,90 @@
+"use client";
+
+import type { KeyboardEvent } from "react";
+
+import { SendIcon } from "@/components/icons";
+
+type ChatComposerProps = {
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onSend: () => void;
+  pending: boolean;
+  value: string;
+};
+
+export function ChatComposer({
+  disabled,
+  onChange,
+  onSend,
+  pending,
+  value,
+}: ChatComposerProps) {
+  function submit() {
+    if (disabled || pending || !value.trim()) {
+      return;
+    }
+    onSend();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      submit();
+    }
+  }
+
+  return (
+    <div className="pb-3 pt-2 sm:pb-6">
+      <form
+        className="mx-auto w-full max-w-3xl px-4 sm:px-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <div className="field-input rounded-2xl bg-surface p-2 shadow-raise">
+          <label className="sr-only" htmlFor="chat-question">
+            Question
+          </label>
+          <textarea
+            className="min-h-[48px] max-h-48 w-full resize-none border-0 bg-transparent px-3 py-2.5 text-[15px] leading-6 text-ink outline-none placeholder:text-ink-faint focus:outline-none focus-visible:outline-none disabled:text-ink-faint sm:min-h-[64px] sm:py-3"
+            disabled={disabled}
+            id="chat-question"
+            maxLength={2000}
+            name="question"
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              disabled
+                ? "Embed the corpus to start asking questions"
+                : "Ask about returns, shipping, allergens, discounts…"
+            }
+            rows={1}
+            value={value}
+          />
+          <div className="flex items-center justify-between gap-3 px-1.5 pb-0.5">
+            <span className="hidden text-xs text-ink-faint sm:inline">
+              Grounded in synthetic docs. Enter to send.
+            </span>
+            <span className="text-xs text-ink-faint sm:hidden">Enter to send</span>
+            <button
+              aria-label="Generate answer"
+              className="btn btn-primary size-10 shrink-0 rounded-full p-0"
+              disabled={disabled || pending || value.trim().length === 0}
+              type="submit"
+            >
+              {pending ? (
+                <span
+                  aria-hidden="true"
+                  className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                />
+              ) : (
+                <SendIcon className="size-[18px]" />
+              )}
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
