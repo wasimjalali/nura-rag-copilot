@@ -94,4 +94,60 @@ describe("KnowledgeWorkspace", () => {
     expect(within(dialog).getByText("Active")).toBeInTheDocument();
     expect(within(dialog).getByText("1 indexed chunk")).toBeInTheDocument();
   });
+
+  it("marks documents and chunks as needing indexing when no embeddings exist", () => {
+    render(
+      <KnowledgeWorkspace
+        addDocumentAction={async () => {}}
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        embeddingStorageStatus={{ ...embeddingStorageStatus, embeddedChunks: 0 }}
+      />,
+    );
+
+    const table = screen.getByRole("table", { name: "Knowledge documents" });
+    expect(
+      within(table).getByRole("row", { name: /Return Policy.*Needs indexing/ }),
+    ).toBeInTheDocument();
+
+    const chunkPreview = screen
+      .getByText("return_policy__chunk_001")
+      .closest("article");
+    expect(chunkPreview).not.toBeNull();
+    expect(within(chunkPreview!).getByText("Needs indexing")).toBeInTheDocument();
+
+    fireEvent.click(
+      within(table).getByRole("button", { name: "View Return Policy" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Return Policy details" });
+    expect(within(dialog).getByText("1 chunk waiting for indexing")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Available to retrieval.")).toBeNull();
+  });
+
+  it("does not mark documents or chunks active before indexing starts", () => {
+    render(
+      <KnowledgeWorkspace
+        addDocumentAction={async () => {}}
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        embeddingStorageStatus={{
+          ...embeddingStorageStatus,
+          lastRunStatus: "not_started",
+        }}
+      />,
+    );
+
+    const table = screen.getByRole("table", { name: "Knowledge documents" });
+    expect(
+      within(table).getByRole("row", { name: /Return Policy.*Needs indexing/ }),
+    ).toBeInTheDocument();
+
+    const chunkPreview = screen
+      .getByText("return_policy__chunk_001")
+      .closest("article");
+    expect(chunkPreview).not.toBeNull();
+    expect(within(chunkPreview!).getByText("Needs indexing")).toBeInTheDocument();
+  });
 });

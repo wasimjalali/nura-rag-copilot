@@ -114,6 +114,10 @@ export function KnowledgeWorkspace({
   }, [inventory, query, sort, statusFilter]);
 
   const activeCount = inventory.filter((item) => item.status === "active").length;
+  const documentStatusBySource = useMemo(
+    () => new Map(inventory.map((item) => [item.document.source, item.status])),
+    [inventory],
+  );
 
   async function handleEmbed() {
     setEmbedError(null);
@@ -248,7 +252,12 @@ export function KnowledgeWorkspace({
               <article className="border-b border-border px-4 py-3 last:border-b-0" key={chunk.id}>
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
                   <span className="font-mono text-xs font-semibold text-accent-deep">{chunk.id}</span>
-                  <span className="tnum text-xs text-ink-faint">~{chunk.tokenEstimate} tokens</span>
+                  <div className="flex items-center gap-3">
+                    <span className="tnum text-xs text-ink-faint">~{chunk.tokenEstimate} tokens</span>
+                    <DocumentStatusLabel
+                      status={documentStatusBySource.get(chunk.source) ?? "needs_indexing"}
+                    />
+                  </div>
                 </div>
                 <p className="mt-1 text-xs font-medium text-ink-muted">{chunk.section}</p>
                 <p className="mt-2 line-clamp-2 text-sm leading-6 text-ink-muted">{chunk.text}</p>
@@ -417,10 +426,7 @@ function DocumentDetailDialog({
         </div>
         <dl className="grid grid-cols-3 gap-3">
           <DetailMetric label="Sections" value={item.sectionCount.toString()} />
-          <DetailMetric
-            label="Indexed chunks"
-            value={`${item.chunks.length} ${item.chunks.length === 1 ? "indexed chunk" : "indexed chunks"}`}
-          />
+          <DetailMetric label="Chunk state" value={chunkStateLabel(item.status, item.chunks.length)} />
           <DetailMetric label="Words" value={item.wordCount.toLocaleString("en-US")} />
         </dl>
         <div>
@@ -607,32 +613,53 @@ function getDocumentStatus({
   isEmbedding: boolean;
   totalChunkCount: number;
 }): DocumentStatus {
-  if (isEmbedding && chunkCount > 0) {
-    return "processing";
-  }
-  if (chunkCount === 0) {
+  if (
+    chunkCount === 0 ||
+    embeddingStorageStatus.embeddedChunks === 0 ||
+    embeddingStorageStatus.lastRunStatus === "not_started"
+  ) {
     return "needs_indexing";
   }
-  if (
-    embeddingStorageStatus.lastRunStatus === "failed" &&
-    embeddingStorageStatus.embeddedChunks < totalChunkCount
-  ) {
+  if (isEmbedding || embeddingStorageStatus.lastRunStatus === "running") {
+    return "processing";
+  }
+  if (embeddingStorageStatus.lastRunStatus === "failed") {
     return "failed";
   }
-  return "active";
+  if (
+    embeddingStorageStatus.lastRunStatus === "succeeded" &&
+    embeddingStorageStatus.embeddedChunks >= totalChunkCount
+  ) {
+    return "active";
+  }
+  return "needs_indexing";
 }
 
 function ingestionNote(status: DocumentStatus) {
   if (status === "active") {
-    return "Available to retrieval.";
+    return "All chunks are embedded and available to retrieval.";
   }
   if (status === "processing") {
-    return "The current indexing run is in progress.";
+    return "The current indexing run is in progress. This document is not ready for retrieval.";
   }
   if (status === "failed") {
-    return "The latest indexing run needs attention.";
+    return "The latest indexing run failed. This document is not ready for retrieval.";
   }
-  return "This document needs chunking and indexing.";
+  return "Indexing has not started for this document. Its chunks are not available to retrieval.";
+}
+
+function chunkStateLabel(status: DocumentStatus, chunkCount: number) {
+  const count = `${chunkCount} ${chunkCount === 1 ? "chunk" : "chunks"}`;
+  if (status === "active") {
+    return `${chunkCount} ${chunkCount === 1 ? "indexed chunk" : "indexed chunks"}`;
+  }
+  if (status === "processing") {
+    return `${count} processing`;
+  }
+  if (status === "failed") {
+    return `${count} not indexed`;
+  }
+  return `${count} waiting for indexing`;
 }
 
 function countSections(markdown: string) {
