@@ -243,6 +243,16 @@ body {
   color: var(--accent-deep);
 }
 
+@media (max-width: 639px) {
+  .citation-control {
+    min-width: 40px;
+    min-height: 40px;
+    justify-content: center;
+    padding: 6px 8px;
+    vertical-align: middle;
+  }
+}
+
 /* Evidence card + signature highlight */
 .evidence-card {
   border: 1px solid var(--border);
@@ -260,15 +270,8 @@ body {
   background: var(--accent-soft);
 }
 .evidence-card[data-flash="true"] {
-  animation: evidence-flash 900ms var(--ease-out);
-}
-@keyframes evidence-flash {
-  0% {
-    box-shadow: 0 0 0 0 rgba(47, 111, 237, 0.45);
-  }
-  100% {
-    box-shadow: 0 0 0 8px rgba(47, 111, 237, 0);
-  }
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .evidence-tab {

@@ -87,7 +87,7 @@ export function ConversationTurn({
                     return (
                       <button
                         aria-label={`Open source ${item.source}, ${item.section}`}
-                        className="cite ml-1 align-baseline"
+                        className="cite citation-control ml-1 align-baseline"
                         data-active={
                           item.id === activeEvidenceId ? "true" : undefined
                         }
@@ -139,6 +139,7 @@ export function ConversationTurn({
             active={feedback === "helpful"}
             label="Mark answer helpful"
             onClick={() => setAnswerFeedback("helpful")}
+            toggle
           >
             <ThumbUpIcon className="size-4" />
           </AnswerActionButton>
@@ -146,6 +147,7 @@ export function ConversationTurn({
             active={feedback === "unhelpful"}
             label="Mark answer unhelpful"
             onClick={() => setAnswerFeedback("unhelpful")}
+            toggle
           >
             <ThumbDownIcon className="size-4" />
           </AnswerActionButton>
@@ -160,16 +162,18 @@ function AnswerActionButton({
   children,
   label,
   onClick,
+  toggle = false,
 }: {
   active?: boolean;
   children: React.ReactNode;
   label: string;
   onClick: () => void;
+  toggle?: boolean;
 }) {
   return (
     <button
       aria-label={label}
-      aria-pressed={active}
+      aria-pressed={toggle ? active : undefined}
       className="answer-action size-10"
       data-active={active ? "true" : undefined}
       onClick={onClick}

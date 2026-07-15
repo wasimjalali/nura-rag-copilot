@@ -145,6 +145,37 @@ const followupAnswer: GroundedAnswerResponse = {
   },
 };
 
+const sameChunkFollowupAnswer: GroundedAnswerResponse = {
+  question: "What does the return policy require?",
+  answer: "Returns need the original order number. [1]",
+  answerModel: "gpt-5.4-mini",
+  structuredAnswer: {
+    answerType: "grounded",
+    paragraphs: [
+      {
+        text: "Returns need the original order number.",
+        citations: ["[1]"],
+      },
+    ],
+  },
+  retrieval: {
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+    results: [
+      {
+        rank: 1,
+        score: 0.72,
+        chunkId: "return_policy__chunk_001",
+        source: "return_policy.md",
+        section: "Opened Products",
+        text: "Opened products may be returned within 30 days.",
+        tokenEstimate: 11,
+        citationLabel: "[1]",
+      },
+    ],
+  },
+};
+
 const insufficientAnswer: GroundedAnswerResponse = {
   question: "Can this cure headaches?",
   answer: "I do not have enough retrieved evidence to answer that question.",
@@ -437,6 +468,37 @@ describe("RagVisibilityDashboard", () => {
     expect(secondCall.history[0].question).toBe(
       "Can customers return opened products?",
     );
+  });
+
+  it("clears provenance focus when generic sources open for another turn", async () => {
+    const askAction = vi.fn(async (input: { history: unknown[] }) =>
+      input.history.length === 0 ? groundedAnswer : sameChunkFollowupAnswer,
+    );
+
+    render(<RagVisibilityDashboard {...baseProps} askAction={askAction} />);
+
+    askQuestion("Can customers return opened products?");
+    await screen.findByText("Opened products may be returned within 30 days.");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Open source return_policy.md, Opened Products",
+      }),
+    );
+
+    askQuestion("What does the return policy require?");
+    await screen.findByText("Returns need the original order number.");
+
+    const sourceTriggers = screen.getAllByRole("button", {
+      name: "Sources: 1 cited of 1 retrieved",
+    });
+    fireEvent.click(sourceTriggers[sourceTriggers.length - 1]);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View full chunk: return_policy.md, Opened Products",
+      }),
+    );
+
+    expect(document.querySelector("mark.evidence-sentence")).toBeNull();
   });
 
   it("clears the transcript when a new chat is started", async () => {

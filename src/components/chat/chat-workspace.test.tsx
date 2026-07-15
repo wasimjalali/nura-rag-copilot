@@ -7,7 +7,7 @@ import {
   ChatWorkspace,
   filterCitedEvidence,
 } from "./chat-workspace";
-import { EvidenceInspector } from "./evidence-inspector";
+import { EvidenceChunkDialog, EvidenceInspector } from "./evidence-inspector";
 import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
 import type { ChatTurn } from "@/lib/rag/chat-history";
 
@@ -176,11 +176,12 @@ describe("ChatWorkspace", () => {
   it("names citation controls with the document and section", () => {
     render(<ChatWorkspaceHarness />);
 
-    expect(
-      screen.getByRole("button", {
-        name: "Open source return_policy.md, Opened products",
-      }),
-    ).toBeInTheDocument();
+    const citation = screen.getByRole("button", {
+      name: "Open source return_policy.md, Opened products",
+    });
+
+    expect(citation).toHaveClass("citation-control");
+    expect(citation).toBeInTheDocument();
   });
 
   it("keeps the mobile composer compact while preserving a 40px send target", () => {
@@ -190,5 +191,53 @@ describe("ChatWorkspace", () => {
     expect(screen.getByRole("button", { name: "Generate answer" })).toHaveClass(
       "size-10",
     );
+  });
+
+  it("uses toggle semantics only for answer feedback", () => {
+    render(<ChatWorkspaceHarness />);
+
+    expect(screen.getByRole("button", { name: "Copy answer" })).not.toHaveAttribute(
+      "aria-pressed",
+    );
+    expect(screen.getByRole("button", { name: "Retry question" })).not.toHaveAttribute(
+      "aria-pressed",
+    );
+    expect(
+      screen.getByRole("button", { name: "Mark answer helpful" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      screen.getByRole("button", { name: "Mark answer unhelpful" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("highlights a full chunk sentence after normalized evidence matching", () => {
+    render(
+      <EvidenceChunkDialog
+        focusText="  OPENED products may be returned within 30 days. "
+        item={buildEvidenceItems(answerWithFiveRetrievedAndOneCited)[0]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Opened products may be returned within 30 days."),
+    ).toHaveClass("evidence-sentence");
+  });
+
+  it("falls back to the full chunk when no sentence matches", () => {
+    render(
+      <EvidenceChunkDialog
+        focusText="This sentence is not present in the retrieved chunk."
+        item={buildEvidenceItems(answerWithFiveRetrievedAndOneCited)[0]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/Opened products may be returned/)).not.toHaveClass(
+      "evidence-sentence",
+    );
+    expect(
+      screen.getByText("Opened products may be returned within 30 days."),
+    ).toBeInTheDocument();
   });
 });
