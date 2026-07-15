@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { KnowledgeWorkspace } from "./knowledge-workspace";
@@ -149,5 +149,65 @@ describe("KnowledgeWorkspace", () => {
       .closest("article");
     expect(chunkPreview).not.toBeNull();
     expect(within(chunkPreview!).getByText("Needs indexing")).toBeInTheDocument();
+  });
+
+  it("shows processing while a local indexing action starts with zero embeddings", async () => {
+    let resolveEmbedding: (() => void) | undefined;
+    render(
+      <KnowledgeWorkspace
+        addDocumentAction={async () => {}}
+        chunks={chunks}
+        documents={documents}
+        embedAction={() =>
+          new Promise<void>((resolve) => {
+            resolveEmbedding = resolve;
+          })
+        }
+        embeddingStorageStatus={{ ...embeddingStorageStatus, embeddedChunks: 0 }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh indexing" }));
+
+    const table = screen.getByRole("table", { name: "Knowledge documents" });
+    await waitFor(() => {
+      expect(
+        within(table).getByRole("row", { name: /Return Policy.*Processing/ }),
+      ).toBeInTheDocument();
+    });
+
+    const chunkPreview = screen
+      .getByText("return_policy__chunk_001")
+      .closest("article");
+    expect(chunkPreview).not.toBeNull();
+    expect(within(chunkPreview!).getByText("Processing")).toBeInTheDocument();
+    expect(resolveEmbedding).toBeDefined();
+  });
+
+  it("shows processing while persisted indexing runs with zero embeddings", () => {
+    render(
+      <KnowledgeWorkspace
+        addDocumentAction={async () => {}}
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        embeddingStorageStatus={{
+          ...embeddingStorageStatus,
+          embeddedChunks: 0,
+          lastRunStatus: "running",
+        }}
+      />,
+    );
+
+    const table = screen.getByRole("table", { name: "Knowledge documents" });
+    expect(
+      within(table).getByRole("row", { name: /Return Policy.*Processing/ }),
+    ).toBeInTheDocument();
+
+    const chunkPreview = screen
+      .getByText("return_policy__chunk_001")
+      .closest("article");
+    expect(chunkPreview).not.toBeNull();
+    expect(within(chunkPreview!).getByText("Processing")).toBeInTheDocument();
   });
 });

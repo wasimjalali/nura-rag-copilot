@@ -613,15 +613,15 @@ function getDocumentStatus({
   isEmbedding: boolean;
   totalChunkCount: number;
 }): DocumentStatus {
+  if (isEmbedding || embeddingStorageStatus.lastRunStatus === "running") {
+    return "processing";
+  }
   if (
     chunkCount === 0 ||
     embeddingStorageStatus.embeddedChunks === 0 ||
     embeddingStorageStatus.lastRunStatus === "not_started"
   ) {
     return "needs_indexing";
-  }
-  if (isEmbedding || embeddingStorageStatus.lastRunStatus === "running") {
-    return "processing";
   }
   if (embeddingStorageStatus.lastRunStatus === "failed") {
     return "failed";
