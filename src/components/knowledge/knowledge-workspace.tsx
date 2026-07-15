@@ -616,15 +616,15 @@ function getDocumentStatus({
   if (isEmbedding || embeddingStorageStatus.lastRunStatus === "running") {
     return "processing";
   }
+  if (embeddingStorageStatus.lastRunStatus === "failed") {
+    return "failed";
+  }
   if (
     chunkCount === 0 ||
     embeddingStorageStatus.embeddedChunks === 0 ||
     embeddingStorageStatus.lastRunStatus === "not_started"
   ) {
     return "needs_indexing";
-  }
-  if (embeddingStorageStatus.lastRunStatus === "failed") {
-    return "failed";
   }
   if (
     embeddingStorageStatus.lastRunStatus === "succeeded" &&

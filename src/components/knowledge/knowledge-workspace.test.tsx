@@ -210,4 +210,31 @@ describe("KnowledgeWorkspace", () => {
     expect(chunkPreview).not.toBeNull();
     expect(within(chunkPreview!).getByText("Processing")).toBeInTheDocument();
   });
+
+  it("preserves failed status when an indexing run fails before embeddings are stored", () => {
+    render(
+      <KnowledgeWorkspace
+        addDocumentAction={async () => {}}
+        chunks={chunks}
+        documents={documents}
+        embedAction={async () => {}}
+        embeddingStorageStatus={{
+          ...embeddingStorageStatus,
+          embeddedChunks: 0,
+          lastRunStatus: "failed",
+        }}
+      />,
+    );
+
+    const table = screen.getByRole("table", { name: "Knowledge documents" });
+    expect(
+      within(table).getByRole("row", { name: /Return Policy.*Failed/ }),
+    ).toBeInTheDocument();
+
+    const chunkPreview = screen
+      .getByText("return_policy__chunk_001")
+      .closest("article");
+    expect(chunkPreview).not.toBeNull();
+    expect(within(chunkPreview!).getByText("Failed")).toBeInTheDocument();
+  });
 });
