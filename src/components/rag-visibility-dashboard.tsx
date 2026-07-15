@@ -8,7 +8,6 @@ import {
   useTransition,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import { useFormStatus } from "react-dom";
 
 import type { DocumentChunk, KnowledgeDocument } from "@/lib/rag/types";
@@ -21,23 +20,27 @@ import type {
   EvalRunResult,
 } from "@/lib/eval/manual-eval-set";
 import { runEvalsAction } from "@/app/eval-actions";
-import { NuraLogo, NuraMark } from "@/components/nura-logo";
+import { NuraMark } from "@/components/nura-logo";
+import { Dialog } from "@/components/ui/dialog";
+import { StatusLabel } from "@/components/ui/status-label";
+import {
+  WorkspaceShell,
+  type WorkspaceView,
+} from "@/components/workspace/workspace-shell";
+import { WorkspaceNav } from "@/components/workspace/workspace-nav";
 import {
   ArrowRightIcon,
-  ChatIcon,
   CheckIcon,
   CloseIcon,
-  EvaluationsIcon,
-  KnowledgeIcon,
   LayersIcon,
   NewChatIcon,
   PlusIcon,
   QuoteIcon,
   SendIcon,
   SourceIcon,
-  TrashIcon,
   UploadIcon,
 } from "@/components/icons";
+import { DEFAULT_NURA_CONFIG } from "@/lib/nura-config";
 import {
   createId,
   deriveConversationTitle,
@@ -47,8 +50,6 @@ import {
   type ChatTurn,
   type Conversation,
 } from "@/lib/rag/chat-history";
-
-type WorkspaceView = "chat" | "knowledge" | "evaluations";
 
 type AskAction = (input: {
   question: string;
@@ -77,18 +78,6 @@ type EvidenceItem = {
   tokenEstimate: number;
 };
 
-type NavItem = {
-  id: WorkspaceView;
-  label: string;
-  icon: (props: { className?: string }) => ReactNode;
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { id: "chat", label: "Chat", icon: ChatIcon },
-  { id: "knowledge", label: "Knowledge base", icon: KnowledgeIcon },
-  { id: "evaluations", label: "Evaluations", icon: EvaluationsIcon },
-];
-
 const SAMPLE_QUESTIONS = [
   "Can customers return opened products?",
   "Does express shipping change the order cutoff?",
@@ -105,7 +94,6 @@ export function RagVisibilityDashboard({
   embeddingStorageStatus,
 }: RagVisibilityDashboardProps) {
   const [activeView, setActiveView] = useState<WorkspaceView>("chat");
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [selectedChunk, setSelectedChunk] = useState<EvidenceItem | null>(null);
   const [focusToken, setFocusToken] = useState(0);
@@ -249,7 +237,6 @@ export function RagVisibilityDashboard({
     setSourcesOpen(false);
     setFocusId(null);
     setSelectedChunk(null);
-    setMobileNavOpen(false);
   }
 
   function deleteConversation(id: string) {
@@ -291,86 +278,22 @@ export function RagVisibilityDashboard({
       if (selectedChunk) {
         return;
       }
-      setMobileNavOpen(false);
       setSourcesOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedChunk]);
 
+  function selectWorkspaceView(view: WorkspaceView) {
+    setActiveView(view);
+    setSourcesOpen(false);
+  }
+
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-canvas text-ink">
-      <NavRail
-        activeConversationId={activeConversationId}
-        activeView={activeView}
-        conversations={conversations}
-        documentsCount={documents.length}
-        embeddedChunks={embeddingStorageStatus.embeddedChunks}
-        onDeleteConversation={deleteConversation}
-        onSelectConversation={selectConversation}
-        onSelectView={(view) => {
-          setActiveView(view);
-          setMobileNavOpen(false);
-          setSourcesOpen(false);
-        }}
-        retrievalReady={retrievalReady}
-      />
-
-      {mobileNavOpen ? (
-        <MobileNavOverlay onClose={() => setMobileNavOpen(false)}>
-          <NavRail
-            activeConversationId={activeConversationId}
-            activeView={activeView}
-            conversations={conversations}
-            documentsCount={documents.length}
-            embeddedChunks={embeddingStorageStatus.embeddedChunks}
-            mobile
-            onDeleteConversation={deleteConversation}
-            onSelectConversation={selectConversation}
-            onSelectView={(view) => {
-              setActiveView(view);
-              setMobileNavOpen(false);
-              setSourcesOpen(false);
-            }}
-            retrievalReady={retrievalReady}
-          />
-        </MobileNavOverlay>
-      ) : null}
-
-      <div className="flex min-w-0 flex-1">
-        <main className="flex min-w-0 flex-1 flex-col">
-          <MobileTopBar onOpenNav={() => setMobileNavOpen(true)} />
-
-          {activeView === "chat" ? (
-            <ChatView
-              activeEvidenceId={focusId}
-              askDisabled={!retrievalReady}
-              canReset={turns.length > 0 || pendingQuestion !== null}
-              onFocusEvidence={focusEvidence}
-              onNewChat={startNewChat}
-              onOpenSources={openSources}
-              onSubmit={submitQuestion}
-              pendingQuestion={pendingQuestion}
-              ready={retrievalReady}
-              turns={turns}
-            />
-          ) : (
-            <ScrollView>
-              {activeView === "knowledge" ? (
-                <KnowledgeView
-                  addDocumentAction={addDocumentAction}
-                  chunks={chunks}
-                  documents={documents}
-                  embedAction={embedAction}
-                  retrievalReady={retrievalReady}
-                />
-              ) : null}
-              {activeView === "evaluations" ? <EvaluationsView /> : null}
-            </ScrollView>
-          )}
-        </main>
-
-        {activeView === "chat" && sourcesOpen ? (
+    <WorkspaceShell
+      activeView={activeView}
+      inspector={
+        activeView === "chat" && sourcesOpen ? (
           <>
             <button
               aria-label="Close sources"
@@ -387,182 +310,55 @@ export function RagVisibilityDashboard({
               retrievedCount={retrievedItems.length}
             />
           </>
-        ) : null}
-      </div>
+        ) : undefined
+      }
+      navigation={
+        <WorkspaceNav
+          activeConversationId={activeConversationId}
+          activeView={activeView}
+          conversations={conversations}
+          documentsCount={documents.length}
+          embeddedChunks={embeddingStorageStatus.embeddedChunks}
+          onDeleteConversation={deleteConversation}
+          onSelectConversation={selectConversation}
+          onSelectView={selectWorkspaceView}
+          retrievalReady={retrievalReady}
+        />
+      }
+      onSelectView={selectWorkspaceView}
+    >
+      {activeView === "chat" ? (
+        <ChatView
+          activeEvidenceId={focusId}
+          askDisabled={!retrievalReady}
+          canReset={turns.length > 0 || pendingQuestion !== null}
+          onFocusEvidence={focusEvidence}
+          onNewChat={startNewChat}
+          onOpenSources={openSources}
+          onSubmit={submitQuestion}
+          pendingQuestion={pendingQuestion}
+          ready={retrievalReady}
+          turns={turns}
+        />
+      ) : (
+        <ScrollView>
+          {activeView === "knowledge" ? (
+            <KnowledgeView
+              addDocumentAction={addDocumentAction}
+              chunks={chunks}
+              documents={documents}
+              embedAction={embedAction}
+              retrievalReady={retrievalReady}
+            />
+          ) : null}
+          {activeView === "evaluations" ? <EvaluationsView /> : null}
+        </ScrollView>
+      )}
 
       {selectedChunk ? (
         <ChunkDialog item={selectedChunk} onClose={() => setSelectedChunk(null)} />
       ) : null}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * Shell
- * ------------------------------------------------------------------ */
-
-function NavRail({
-  activeConversationId,
-  activeView,
-  conversations,
-  documentsCount,
-  embeddedChunks,
-  onDeleteConversation,
-  onSelectConversation,
-  onSelectView,
-  retrievalReady,
-  mobile = false,
-}: {
-  activeConversationId: string | null;
-  activeView: WorkspaceView;
-  conversations: Conversation[];
-  documentsCount: number;
-  embeddedChunks: number;
-  onDeleteConversation: (id: string) => void;
-  onSelectConversation: (id: string) => void;
-  onSelectView: (view: WorkspaceView) => void;
-  retrievalReady: boolean;
-  mobile?: boolean;
-}) {
-  return (
-    <aside
-      className={[
-        "flex w-[264px] shrink-0 flex-col gap-6 border-r border-border bg-surface px-4 py-5",
-        mobile ? "h-full" : "hidden lg:flex",
-      ].join(" ")}
-    >
-      <div className="px-2">
-        <NuraLogo />
-      </div>
-
-      <nav aria-label="Workspace" className="flex flex-col gap-1">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const active = activeView === item.id;
-          return (
-            <button
-              aria-current={active ? "page" : undefined}
-              className="nav-item text-sm"
-              key={item.id}
-              onClick={() => onSelectView(item.id)}
-              type="button"
-            >
-              <Icon className="size-[18px] shrink-0" />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      {conversations.length > 0 ? (
-        <ChatHistoryList
-          activeConversationId={activeConversationId}
-          conversations={conversations}
-          onDelete={onDeleteConversation}
-          onSelect={onSelectConversation}
-        />
-      ) : null}
-
-      <div className="mt-auto flex flex-col gap-3 px-1">
-        <div className="flex items-center gap-2 px-1">
-          <span
-            className={[
-              "size-1.5 rounded-full",
-              retrievalReady ? "bg-success" : "bg-warning",
-            ].join(" ")}
-          />
-          <span className="text-xs font-medium text-ink-muted">
-            {retrievalReady ? "Retrieval ready" : "Setup needed"}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <RailStat label="Documents" value={documentsCount.toString()} />
-          <RailStat label="Vectors" value={embeddedChunks.toString()} />
-        </div>
-        <p className="px-1 text-xs leading-5 text-ink-faint">
-          Synthetic support documents only. No customer data.
-        </p>
-      </div>
-    </aside>
-  );
-}
-
-// Session history list. Titles come from each conversation's first question;
-// clicking one restores its full transcript, and delete is per-item.
-function ChatHistoryList({
-  activeConversationId,
-  conversations,
-  onDelete,
-  onSelect,
-}: {
-  activeConversationId: string | null;
-  conversations: Conversation[];
-  onDelete: (id: string) => void;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-        Recent
-      </p>
-      <div className="-mr-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
-        {conversations.map((conversation) => {
-          const active = conversation.id === activeConversationId;
-          return (
-            <div className="group relative" key={conversation.id}>
-              <button
-                aria-current={active ? "true" : undefined}
-                className={[
-                  "flex w-full items-center gap-2.5 rounded-lg py-1.5 pl-2.5 pr-8 text-left text-[13px] transition",
-                  active
-                    ? "bg-accent-soft text-accent-deep"
-                    : "text-ink-muted hover:bg-sunken hover:text-ink",
-                ].join(" ")}
-                onClick={() => onSelect(conversation.id)}
-                type="button"
-              >
-                <ChatIcon className="size-4 shrink-0 opacity-70" />
-                <span className="truncate">{conversation.title}</span>
-              </button>
-              <button
-                aria-label={`Delete chat: ${conversation.title}`}
-                className="icon-btn absolute right-1 top-1/2 size-6 -translate-y-1/2 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100"
-                onClick={() => onDelete(conversation.id)}
-                type="button"
-              >
-                <TrashIcon className="size-3.5" />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function RailStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-canvas px-3 py-2.5">
-      <p className="text-[11px] font-medium text-ink-faint">{label}</p>
-      <p className="tnum mt-1 text-lg font-semibold text-ink">{value}</p>
-    </div>
-  );
-}
-
-function MobileTopBar({ onOpenNav }: { onOpenNav: () => void }) {
-  return (
-    <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-2.5 lg:hidden">
-      <button
-        aria-label="Open navigation"
-        className="icon-btn size-9"
-        onClick={onOpenNav}
-        type="button"
-      >
-        <MenuGlyph />
-      </button>
-      <NuraLogo compact />
-      <span className="text-sm font-semibold text-ink">Nura</span>
-    </header>
+    </WorkspaceShell>
   );
 }
 
@@ -570,69 +366,6 @@ function ScrollView({ children }: { children: ReactNode }) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="panel-in mx-auto w-full max-w-5xl px-4 py-8 sm:px-8 sm:py-10">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-// The mobile nav is modal: it traps Tab and restores focus on close so a
-// keyboard or screen-reader user cannot land on the chat hidden behind it.
-function MobileNavOverlay({
-  children,
-  onClose,
-}: {
-  children: ReactNode;
-  onClose: () => void;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    (panel?.querySelector<HTMLElement>(FOCUSABLE) ?? panel)?.focus();
-
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Tab" || !panel) {
-        return;
-      }
-      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
-      if (items.length === 0) {
-        return;
-      }
-      const firstItem = items[0];
-      const lastItem = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === firstItem) {
-        event.preventDefault();
-        lastItem.focus();
-      } else if (!event.shiftKey && document.activeElement === lastItem) {
-        event.preventDefault();
-        firstItem.focus();
-      }
-    }
-
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      previous?.focus?.();
-    };
-  }, []);
-
-  return (
-    <div className="fixed inset-0 z-40 lg:hidden">
-      <button
-        aria-label="Close navigation"
-        className="absolute inset-0 bg-ink/30"
-        onClick={onClose}
-        type="button"
-      />
-      <div
-        aria-label="Navigation"
-        aria-modal="true"
-        className="panel-in absolute inset-y-0 left-0 w-[264px]"
-        ref={panelRef}
-        role="dialog"
-      >
         {children}
       </div>
     </div>
@@ -717,7 +450,12 @@ function ChatHeader({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2.5 sm:px-6">
-      <h1 className="text-sm font-semibold text-ink">Support chat</h1>
+      <h1
+        aria-label={DEFAULT_NURA_CONFIG.supportRoleLabel}
+        className="text-sm font-semibold text-ink"
+      >
+        Support chat
+      </h1>
       <button
         className="btn btn-secondary h-9 px-3 text-sm"
         disabled={!canReset}
@@ -808,8 +546,8 @@ function ChatWelcome({ onRunQuestion }: { onRunQuestion: (value: string) => void
         Ask a grounded question
       </h2>
       <p className="mt-2 max-w-md text-[15px] leading-6 text-ink-muted">
-        Nura answers only from the retrieved support documents and cites every
-        source. If the evidence is not there, it says so.
+        {DEFAULT_NURA_CONFIG.productName} answers only from the retrieved support
+        documents and cites every source. If the evidence is not there, it says so.
       </p>
 
       <div className="mt-8 grid w-full max-w-xl gap-2 sm:grid-cols-2">
@@ -862,9 +600,11 @@ function AnswerMessage({
 
       <div className="min-w-0 flex-1">
         <div className="mb-2 flex items-center gap-2">
-          <span className="text-sm font-semibold text-ink">Nura</span>
+          <span className="text-sm font-semibold text-ink">
+            {DEFAULT_NURA_CONFIG.productName}
+          </span>
           {!grounded ? (
-            <StatusPill tone="warning">insufficient evidence</StatusPill>
+            <StatusLabel tone="warning">insufficient evidence</StatusLabel>
           ) : null}
         </div>
 
@@ -950,8 +690,8 @@ function SetupNotice() {
         Store and embed chunks before answer generation.
       </h2>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-muted">
-        The corpus has not been embedded yet. Open Knowledge base and run the embed
-        step, then come back to ask questions.
+        The corpus has not been embedded yet. Open {DEFAULT_NURA_CONFIG.knowledgeLabel}
+        {" "}and run the embed step, then come back to ask questions.
       </p>
     </div>
   );
@@ -1258,82 +998,6 @@ function ChunkDialog({
   );
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function Dialog({
-  ariaLabel,
-  children,
-  maxWidth,
-  onClose,
-}: {
-  ariaLabel: string;
-  children: ReactNode;
-  maxWidth: string;
-  onClose: () => void;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel)?.focus();
-
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (event.key === "Tab" && panel) {
-        const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
-        if (items.length === 0) {
-          return;
-        }
-        const firstItem = items[0];
-        const lastItem = items[items.length - 1];
-        if (event.shiftKey && document.activeElement === firstItem) {
-          event.preventDefault();
-          lastItem.focus();
-        } else if (!event.shiftKey && document.activeElement === lastItem) {
-          event.preventDefault();
-          firstItem.focus();
-        }
-      }
-    }
-
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      previous?.focus?.();
-    };
-  }, [onClose]);
-
-  if (typeof document === "undefined") {
-    return null;
-  }
-
-  return createPortal(
-    <div
-      className="dialog-overlay fixed inset-0 z-50 grid place-items-center p-4"
-      onClick={onClose}
-    >
-      <div
-        aria-label={ariaLabel}
-        aria-modal="true"
-        className={`dialog-panel ${maxWidth}`}
-        onClick={(event) => event.stopPropagation()}
-        ref={panelRef}
-        role="dialog"
-        tabIndex={-1}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
 /* ------------------------------------------------------------------ *
  * Knowledge base
  * ------------------------------------------------------------------ */
@@ -1358,7 +1022,7 @@ function KnowledgeView({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-[-0.01em] text-ink">
-            Knowledge base
+            {DEFAULT_NURA_CONFIG.knowledgeLabel}
           </h1>
           <p className="mt-1 text-sm text-ink-muted">
             The synthetic documents and the chunks they split into.
@@ -1716,7 +1380,7 @@ function EvaluationsView() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-[-0.01em] text-ink">
-            Evaluations
+            {DEFAULT_NURA_CONFIG.evaluationsLabel}
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
             {MANUAL_EVAL_SET.length} checks that run the real RAG loop and grade each
@@ -1789,9 +1453,9 @@ function EvalSummary({ result }: { result: EvalRunResult }) {
         </span>
         <span className="text-sm text-ink-muted">checks passed</span>
       </div>
-      <StatusPill tone={allPassed ? "success" : "warning"}>
+      <StatusLabel tone={allPassed ? "success" : "warning"}>
         {allPassed ? "All passing" : `${result.total - result.passed} failing`}
-      </StatusPill>
+      </StatusLabel>
     </div>
   );
 }
@@ -1822,9 +1486,9 @@ function EvalRow({
           </div>
         ) : null}
       </div>
-      <StatusPill tone={item.category === "Guardrail" ? "warning" : "neutral"}>
+      <StatusLabel tone={item.category === "Guardrail" ? "warning" : "neutral"}>
         {item.category}
-      </StatusPill>
+      </StatusLabel>
     </article>
   );
 }
@@ -1890,52 +1554,11 @@ function MetaTag({ children }: { children: ReactNode }) {
   );
 }
 
-function StatusPill({
-  children,
-  tone,
-}: {
-  children: ReactNode;
-  tone: "success" | "warning" | "danger" | "neutral";
-}) {
-  const toneClass =
-    tone === "success"
-      ? "border-success/25 bg-success-soft text-success"
-      : tone === "warning"
-        ? "border-warning/25 bg-warning-soft text-warning"
-        : tone === "danger"
-          ? "border-danger/25 bg-danger-soft text-danger"
-          : "border-border bg-canvas text-ink-muted";
-
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${toneClass}`}
-    >
-      {children}
-    </span>
-  );
-}
-
 function EmptyState({ message }: { message: string }) {
   return (
     <div className="mt-4 rounded-xl border border-dashed border-border-strong bg-surface p-6 text-sm text-ink-muted">
       {message}
     </div>
-  );
-}
-
-function MenuGlyph() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="size-5"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeWidth={1.6}
-      viewBox="0 0 24 24"
-    >
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
   );
 }
 

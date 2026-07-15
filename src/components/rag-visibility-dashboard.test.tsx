@@ -1,8 +1,27 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { RagVisibilityDashboard } from "./rag-visibility-dashboard";
 import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
+import { WorkspaceShell, type WorkspaceView } from "@/components/workspace/workspace-shell";
+import { WorkspaceNav } from "@/components/workspace/workspace-nav";
+import { Dialog } from "@/components/ui/dialog";
+import { StatusLabel } from "@/components/ui/status-label";
+
+function WorkspaceShellHarness() {
+  const [activeView, setActiveView] = useState<WorkspaceView>("chat");
+
+  return (
+    <WorkspaceShell
+      activeView={activeView}
+      navigation={<WorkspaceNav activeView={activeView} onSelectView={setActiveView} />}
+      onSelectView={setActiveView}
+    >
+      <p>{activeView} content</p>
+    </WorkspaceShell>
+  );
+}
 
 const documents = [
   {
@@ -147,6 +166,59 @@ function askQuestion(text: string) {
 }
 
 describe("RagVisibilityDashboard", () => {
+  it("marks the active workspace and changes views", () => {
+    render(<WorkspaceShellHarness />);
+
+    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Knowledge base" }));
+
+    expect(
+      screen.getByRole("button", { name: "Knowledge base" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("restores focus to the mobile navigation trigger when the drawer closes", () => {
+    render(<WorkspaceShellHarness />);
+
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
+
+    expect(trigger).toHaveFocus();
+  });
+
+  it("traps focus in the shared dialog and closes on Escape", () => {
+    const onClose = vi.fn();
+    render(
+      <Dialog ariaLabel="Test dialog" maxWidth="max-w-lg" onClose={onClose}>
+        <button type="button">First action</button>
+        <button type="button">Last action</button>
+      </Dialog>,
+    );
+
+    const firstAction = screen.getByRole("button", { name: "First action" });
+    const lastAction = screen.getByRole("button", { name: "Last action" });
+    lastAction.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+
+    expect(firstAction).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("renders a reusable status label", () => {
+    render(<StatusLabel tone="success">Ready</StatusLabel>);
+
+    expect(screen.getByText("Ready")).toHaveClass("text-success");
+  });
+
   it("renders the three production workspace views and drops the learning-only ones", () => {
     render(<RagVisibilityDashboard {...baseProps} />);
 
