@@ -1,3 +1,5 @@
+import type { PublicAppError } from "@/lib/rag/app-errors";
+
 export type EvalCategory =
   | "Grounding"
   | "Guardrail"
@@ -142,6 +144,7 @@ export type EvalCaseResult = {
   answerType: string;
   citedSources: string[];
   detail: string;
+  error?: PublicAppError;
 };
 
 /** Aggregate result of a full live eval run. */

@@ -45,6 +45,9 @@ describe("storage record helpers", () => {
         source: "return_policy.md",
         section: "Window",
         text: "Returns are available.",
+        textHash:
+          "ce65c54b669d8da16544c3b4c35382334132c7d2ea76d33214d5e649ba247ab1",
+        chunkerVersion: "heading-v2",
         tokenEstimate: 5,
       },
     ]);

@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 
-import { api } from "./_generated/api";
-import { action } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { action, type ActionCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import {
   readAnswerConfig,
   requestChatCompletion,
@@ -17,6 +18,7 @@ import {
   type ConversationTurn,
   type StructuredGroundedAnswer,
 } from "./groundedAnswer";
+import { requireActor } from "./auth";
 
 const answerType = v.union(
   v.literal("grounded"),
@@ -52,6 +54,7 @@ type RetrievalForAnswer = {
     text: string;
     tokenEstimate: number;
   }>;
+  retryCount: number;
 };
 
 type GroundedAnswerResponse = {
@@ -64,6 +67,8 @@ type GroundedAnswerResponse = {
     embeddingDimensions: number;
     results: CitedRetrievalResult[];
   };
+  conversationId?: Id<"conversations">;
+  assistantMessageId?: Id<"messages">;
 };
 
 // Multi-turn context: how much prior conversation to carry. Bounded so the
@@ -106,16 +111,13 @@ function buildRetrievalQuery(
   return [...priorQuestions, question].join("\n");
 }
 
-const historyTurn = v.object({
-  question: v.string(),
-  answer: v.string(),
-});
-
 export const generateGroundedAnswer = action({
   args: {
     question: v.string(),
     limit: v.optional(v.number()),
-    history: v.optional(v.array(historyTurn)),
+    conversationId: v.optional(v.id("conversations")),
+    requestId: v.string(),
+    persistConversation: v.optional(v.boolean()),
   },
   returns: v.object({
     question: v.string(),
@@ -130,13 +132,54 @@ export const generateGroundedAnswer = action({
       embeddingDimensions: v.number(),
       results: v.array(citedRetrievalResult),
     }),
+    conversationId: v.optional(v.id("conversations")),
+    assistantMessageId: v.optional(v.id("messages")),
   }),
   handler: async (ctx, args): Promise<GroundedAnswerResponse> => {
+    const actor = await requireActor(ctx);
+    const startedAt = Date.now();
+    const persistConversation = args.persistConversation !== false;
+    let pending:
+      | {
+          conversationId: Id<"conversations">;
+          assistantMessageId: Id<"messages">;
+          duplicate: boolean;
+        }
+      | undefined;
+
     try {
       const config = readAnswerConfig();
-      const history = trimHistory(args.history ?? []);
+      if (persistConversation) {
+        pending = await ctx.runMutation(internal.conversations.createPendingTurn, {
+          ownerSubject: actor.subject,
+          conversationId: args.conversationId,
+          requestId: args.requestId,
+          question: args.question,
+          now: startedAt,
+        });
+        if (pending.duplicate) {
+          const completed = await ctx.runQuery(
+            internal.conversations.getCompletedTurn,
+            {
+              assistantMessageId: pending.assistantMessageId,
+              ownerSubject: actor.subject,
+            },
+          );
+          if (completed) return completed;
+          throw new Error("An answer is already in progress.");
+        }
+      }
+      const history = trimHistory(
+        pending
+          ? await ctx.runQuery(internal.conversations.getHistory, {
+              conversationId: pending.conversationId,
+              ownerSubject: actor.subject,
+            })
+          : [],
+      );
+      const retrievalStartedAt = Date.now();
       const retrieval: RetrievalForAnswer = await ctx.runAction(
-        api.ragRetrieval.retrieveRelevantChunks,
+        internal.ragRetrieval.retrieveRelevantChunks,
         {
           // Fold recent questions into the retrieval query so a short follow-up
           // still finds the right chunks.
@@ -144,12 +187,12 @@ export const generateGroundedAnswer = action({
           limit: args.limit,
         },
       );
+      const retrievalFinishedAt = Date.now();
       const citedResults = addCitationLabels(retrieval.results);
 
       if (citedResults.length === 0) {
         const structuredAnswer = buildInsufficientEvidenceAnswer();
-
-        return {
+        const response: GroundedAnswerResponse = {
           question: args.question,
           answer: structuredAnswerToText(structuredAnswer),
           answerModel: config.deployment,
@@ -159,7 +202,20 @@ export const generateGroundedAnswer = action({
             embeddingDimensions: retrieval.embeddingDimensions,
             results: citedResults,
           },
+          conversationId: pending?.conversationId,
+          assistantMessageId: pending?.assistantMessageId,
         };
+        await completePersistedTurn(ctx, pending, response);
+        await recordAnswerOperation(ctx, {
+          requestId: args.requestId,
+          actorSubject: actor.subject,
+          startedAt,
+          retrievalMs: retrievalFinishedAt - retrievalStartedAt,
+          generationMs: 0,
+          response,
+          retryCount: retrieval.retryCount,
+        });
+        return response;
       }
 
       const messages = buildGroundedAnswerMessages(
@@ -167,13 +223,19 @@ export const generateGroundedAnswer = action({
         citedResults,
         history,
       );
-      const rawAnswer = await requestChatCompletion(config, messages);
+      const generationStartedAt = Date.now();
+      let answerRetryCount = 0;
+      const rawAnswer = await requestChatCompletion(config, messages, {
+        onRetry: () => {
+          answerRetryCount += 1;
+        },
+      });
       const structuredAnswer = parseStructuredGroundedAnswer(
         rawAnswer,
         citedResults,
       );
 
-      return {
+      const response: GroundedAnswerResponse = {
         question: args.question,
         answer: structuredAnswerToText(structuredAnswer),
         answerModel: config.deployment,
@@ -183,9 +245,130 @@ export const generateGroundedAnswer = action({
           embeddingDimensions: retrieval.embeddingDimensions,
           results: citedResults,
         },
+        conversationId: pending?.conversationId,
+        assistantMessageId: pending?.assistantMessageId,
       };
+      await completePersistedTurn(ctx, pending, response);
+      await recordAnswerOperation(ctx, {
+        requestId: args.requestId,
+        actorSubject: actor.subject,
+        startedAt,
+        retrievalMs: retrievalFinishedAt - retrievalStartedAt,
+        generationMs: Date.now() - generationStartedAt,
+        response,
+        retryCount: retrieval.retryCount + answerRetryCount,
+      });
+      return response;
     } catch (error) {
+      const cleanup: Array<Promise<unknown>> = [];
+      if (pending && !pending.duplicate) {
+        cleanup.push(
+          ctx.runMutation(internal.conversations.failTurn, {
+            assistantMessageId: pending.assistantMessageId,
+            errorCode: toOperationErrorCode(error),
+            now: Date.now(),
+          }),
+        );
+      }
+      cleanup.push(
+        ctx.runMutation(internal.operations.recordOperation, {
+          requestId: args.requestId,
+          actorSubject: actor.subject,
+          operationType: "answer",
+          status: "failed",
+          modelIdentifiers: {},
+          timings: {
+            startedAt,
+            finishedAt: Date.now(),
+            durationMs: Date.now() - startedAt,
+          },
+          retryCount: 0,
+          errorCode: toOperationErrorCode(error),
+        }),
+      );
+      await Promise.allSettled(cleanup);
       throw new Error(toSafeErrorMessage(error));
     }
   },
 });
+
+async function completePersistedTurn(
+  ctx: ActionCtx,
+  pending:
+    | {
+        conversationId: Id<"conversations">;
+        assistantMessageId: Id<"messages">;
+        duplicate: boolean;
+      }
+    | undefined,
+  response: GroundedAnswerResponse,
+) {
+  if (!pending) return;
+  await ctx.runMutation(internal.conversations.completeTurn, {
+    assistantMessageId: pending.assistantMessageId,
+    content: response.answer,
+    answerType: response.structuredAnswer.answerType,
+    answerModel: response.answerModel,
+    embeddingModel: response.retrieval.embeddingModel,
+    embeddingDimensions: response.retrieval.embeddingDimensions,
+    structuredParagraphs: response.structuredAnswer.paragraphs,
+    evidence: response.retrieval.results,
+    now: Date.now(),
+  });
+}
+
+async function recordAnswerOperation(
+  ctx: ActionCtx,
+  input: {
+    requestId: string;
+    actorSubject: string;
+    startedAt: number;
+    retrievalMs: number;
+    generationMs: number;
+    response: GroundedAnswerResponse;
+    retryCount: number;
+  },
+) {
+  const finishedAt = Date.now();
+  await ctx.runMutation(internal.operations.recordOperation, {
+    requestId: input.requestId,
+    actorSubject: input.actorSubject,
+    operationType: "answer",
+    status: "succeeded",
+    modelIdentifiers: {
+      answerModel: input.response.answerModel,
+      embeddingModel: input.response.retrieval.embeddingModel,
+    },
+    timings: {
+      startedAt: input.startedAt,
+      finishedAt,
+      durationMs: finishedAt - input.startedAt,
+      retrievalMs: input.retrievalMs,
+      generationMs: input.generationMs,
+    },
+    retrievalSummary: {
+      resultCount: input.response.retrieval.results.length,
+      topScore: input.response.retrieval.results[0]?.score,
+      citedChunkCount: new Set(
+        input.response.structuredAnswer.paragraphs.flatMap(
+          (paragraph) => paragraph.citations,
+        ),
+      ).size,
+    },
+    retryCount: input.retryCount,
+  }).catch((error) => {
+    console.error("Failed to record the answer operation:", error);
+  });
+}
+
+function toOperationErrorCode(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("AUTH_REQUIRED")) return "AUTH_REQUIRED" as const;
+  if (message.includes("FORBIDDEN")) return "FORBIDDEN" as const;
+  if (message.includes("No active corpus")) return "CORPUS_NOT_READY" as const;
+  if (message.includes("rate limited")) return "RATE_LIMITED" as const;
+  if (message.includes("already in progress")) return "RATE_LIMITED" as const;
+  if (message.includes("invalid response")) return "INVALID_MODEL_RESPONSE" as const;
+  if (message.includes("temporarily unavailable")) return "PROVIDER_TEMPORARY" as const;
+  return "INTERNAL_ERROR" as const;
+}

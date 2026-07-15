@@ -2,7 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { action, internalQuery } from "./_generated/server";
+import { internalAction, internalQuery } from "./_generated/server";
 import {
   EMBEDDING_DIMENSIONS,
   readEmbeddingConfig,
@@ -55,9 +55,10 @@ type RetrievalResponse = {
   embeddingModel: string;
   embeddingDimensions: number;
   results: RetrievalResult[];
+  retryCount: number;
 };
 
-export const retrieveRelevantChunks = action({
+export const retrieveRelevantChunks = internalAction({
   args: {
     question: v.string(),
     limit: v.optional(v.number()),
@@ -67,13 +68,26 @@ export const retrieveRelevantChunks = action({
     embeddingModel: v.string(),
     embeddingDimensions: v.number(),
     results: v.array(retrievalResult),
+    retryCount: v.number(),
   }),
   handler: async (ctx, args): Promise<RetrievalResponse> => {
     try {
       const question = validateQuestion(args.question);
       const limit = clampLimit(args.limit);
+      const target: {
+        activeVersionId: Id<"corpusVersions"> | null;
+        legacyAvailable: boolean;
+      } = await ctx.runQuery(internal.ragRetrieval.getRetrievalTarget, {});
+      if (!target.activeVersionId && !target.legacyAvailable) {
+        throw new Error("CORPUS_NOT_READY");
+      }
       const config = readEmbeddingConfig();
-      const vectors = await requestEmbeddings(config, [question]);
+      let retryCount = 0;
+      const vectors = await requestEmbeddings(config, [question], {
+        onRetry: () => {
+          retryCount += 1;
+        },
+      });
       const vector = vectors[0];
 
       if (!vector) {
@@ -89,6 +103,8 @@ export const retrieveRelevantChunks = action({
       const matches = await ctx.vectorSearch("documentChunks", "by_embedding", {
         vector,
         limit,
+        filter: (q) =>
+          q.eq("corpusVersionId", target.activeVersionId ?? undefined),
       });
       // Drop matches below the relevance floor before building results, so
       // ranks stay contiguous over the kept matches and a question with no
@@ -100,6 +116,7 @@ export const retrieveRelevantChunks = action({
         internal.ragRetrieval.getChunksByIds,
         {
           ids: relevantMatches.map((match) => match._id),
+          corpusVersionId: target.activeVersionId ?? undefined,
         },
       );
       const chunksById = new Map<Id<"documentChunks">, RetrievalChunkRecord>(
@@ -130,6 +147,7 @@ export const retrieveRelevantChunks = action({
         embeddingModel: config.deployment,
         embeddingDimensions: EMBEDDING_DIMENSIONS,
         results,
+        retryCount,
       };
     } catch (error) {
       throw new Error(toSafeErrorMessage(error));
@@ -140,6 +158,7 @@ export const retrieveRelevantChunks = action({
 export const getChunksByIds = internalQuery({
   args: {
     ids: v.array(v.id("documentChunks")),
+    corpusVersionId: v.optional(v.id("corpusVersions")),
   },
   returns: v.array(retrievalChunkRecord),
   handler: async (ctx, args): Promise<RetrievalChunkRecord[]> => {
@@ -151,6 +170,7 @@ export const getChunksByIds = internalQuery({
       if (!chunk) {
         continue;
       }
+      if (chunk.corpusVersionId !== args.corpusVersionId) continue;
 
       chunks.push({
         _id: chunk._id,
@@ -163,6 +183,24 @@ export const getChunksByIds = internalQuery({
     }
 
     return chunks;
+  },
+});
+
+export const getRetrievalTarget = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const corpus = await ctx.db
+      .query("corpora")
+      .withIndex("by_name", (q) => q.eq("name", "default"))
+      .unique();
+    const legacyChunks = await ctx.db.query("documentChunks").collect();
+    return {
+      activeVersionId: corpus?.activeVersionId ?? null,
+      legacyAvailable: legacyChunks.some(
+        (chunk) =>
+          chunk.corpusVersionId === undefined && chunk.embedding !== undefined,
+      ),
+    };
   },
 });
 

@@ -143,3 +143,39 @@ export function TrashIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function CopyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect height="11" rx="1.5" width="10" x="9" y="9" />
+      <path d="M15 9V6.5A1.5 1.5 0 0 0 13.5 5h-8A1.5 1.5 0 0 0 4 6.5v8A1.5 1.5 0 0 0 5.5 16H9" />
+    </Icon>
+  );
+}
+
+export function RetryIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M19 8.5A7.5 7.5 0 1 0 19.4 15" />
+      <path d="M19 4.5v4h-4" />
+    </Icon>
+  );
+}
+
+export function ThumbUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7.5 20H5.8A1.8 1.8 0 0 1 4 18.2v-6.4A1.8 1.8 0 0 1 5.8 10H7.5" />
+      <path d="M7.5 20h8.2a2 2 0 0 0 1.9-1.4l1.5-5A2 2 0 0 0 17.2 11h-3.6l.8-3.5a3.2 3.2 0 0 0-1.2-3.1L12 3.5 7.5 10Z" />
+    </Icon>
+  );
+}
+
+export function ThumbDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7.5 4H5.8A1.8 1.8 0 0 0 4 5.8v6.4A1.8 1.8 0 0 0 5.8 14H7.5" />
+      <path d="M7.5 4h8.2a2 2 0 0 1 1.9 1.4l1.5 5a2 2 0 0 1-1.9 2.6h-3.6l.8 3.5a3.2 3.2 0 0 1-1.2 3.1L12 20.5 7.5 14Z" />
+    </Icon>
+  );
+}

@@ -29,4 +29,6 @@ export type GroundedAnswerResponse = {
     embeddingDimensions: number;
     results: CitedRetrievalResult[];
   };
+  conversationId?: string;
+  assistantMessageId?: string;
 };

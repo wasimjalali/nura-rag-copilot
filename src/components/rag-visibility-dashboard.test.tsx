@@ -1,8 +1,45 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { RagVisibilityDashboard } from "./rag-visibility-dashboard";
 import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
+import type { Conversation } from "@/lib/rag/chat-history";
+import { WorkspaceShell, type WorkspaceView } from "@/components/workspace/workspace-shell";
+import { WorkspaceNav } from "@/components/workspace/workspace-nav";
+import { Dialog } from "@/components/ui/dialog";
+import { StatusLabel } from "@/components/ui/status-label";
+import { actionSuccess } from "@/lib/rag/app-errors";
+
+function WorkspaceShellHarness({
+  conversations = [],
+}: {
+  conversations?: Conversation[];
+}) {
+  const [activeView, setActiveView] = useState<WorkspaceView>("chat");
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(
+    null,
+  );
+
+  return (
+    <WorkspaceShell
+      activeView={activeView}
+      navigation={
+        <WorkspaceNav
+          activeConversationId={activeConversationId}
+          activeView={activeView}
+          conversations={conversations}
+          onSelectConversation={setActiveConversationId}
+          onSelectView={setActiveView}
+        />
+      }
+      onSelectView={setActiveView}
+    >
+      <p>{activeView} content</p>
+      <p>{activeConversationId ? `selected ${activeConversationId}` : "no chat selected"}</p>
+    </WorkspaceShell>
+  );
+}
 
 const documents = [
   {
@@ -109,6 +146,37 @@ const followupAnswer: GroundedAnswerResponse = {
   },
 };
 
+const sameChunkFollowupAnswer: GroundedAnswerResponse = {
+  question: "What does the return policy require?",
+  answer: "Returns need the original order number. [1]",
+  answerModel: "gpt-5.4-mini",
+  structuredAnswer: {
+    answerType: "grounded",
+    paragraphs: [
+      {
+        text: "Returns need the original order number.",
+        citations: ["[1]"],
+      },
+    ],
+  },
+  retrieval: {
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+    results: [
+      {
+        rank: 1,
+        score: 0.72,
+        chunkId: "return_policy__chunk_001",
+        source: "return_policy.md",
+        section: "Opened Products",
+        text: "Opened products may be returned within 30 days.",
+        tokenEstimate: 11,
+        citationLabel: "[1]",
+      },
+    ],
+  },
+};
+
 const insufficientAnswer: GroundedAnswerResponse = {
   question: "Can this cure headaches?",
   answer: "I do not have enough retrieved evidence to answer that question.",
@@ -129,12 +197,16 @@ const insufficientAnswer: GroundedAnswerResponse = {
   },
 };
 
+function successfulAnswer(answer: GroundedAnswerResponse) {
+  return actionSuccess(answer);
+}
+
 const baseProps = {
   chunks,
   documents,
   addDocumentAction: async () => {},
   embedAction: async () => {},
-  askAction: async () => groundedAnswer,
+  askAction: async () => successfulAnswer(groundedAnswer),
   embeddingStorageStatus,
 };
 
@@ -147,6 +219,110 @@ function askQuestion(text: string) {
 }
 
 describe("RagVisibilityDashboard", () => {
+  it("marks the active workspace and changes views", () => {
+    render(<WorkspaceShellHarness />);
+
+    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Knowledge base" }));
+
+    expect(
+      screen.getByRole("button", { name: "Knowledge base" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("restores focus to the mobile navigation trigger when the drawer closes", () => {
+    render(<WorkspaceShellHarness />);
+
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
+
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes the mobile navigation drawer on Escape", () => {
+    render(<WorkspaceShellHarness />);
+
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes the mobile drawer after selecting a saved conversation", () => {
+    const savedConversation: Conversation = {
+      id: "saved-conversation",
+      title: "Saved conversation",
+      turns: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    render(<WorkspaceShellHarness conversations={[savedConversation]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const drawer = screen.getByRole("dialog", { name: "Navigation" });
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Saved conversation" }),
+    );
+
+    expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull();
+    expect(screen.getByText("selected saved-conversation")).toBeInTheDocument();
+  });
+
+  it("traps focus in the shared dialog and closes on Escape", () => {
+    const onClose = vi.fn();
+    render(
+      <Dialog ariaLabel="Test dialog" maxWidth="max-w-lg" onClose={onClose}>
+        <button type="button">First action</button>
+        <button type="button">Last action</button>
+      </Dialog>,
+    );
+
+    const firstAction = screen.getByRole("button", { name: "First action" });
+    const lastAction = screen.getByRole("button", { name: "Last action" });
+    lastAction.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+
+    expect(firstAction).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps focus on an empty shared dialog when Tab is pressed", () => {
+    render(
+      <Dialog ariaLabel="Empty dialog" maxWidth="max-w-lg" onClose={vi.fn()}>
+        <p>No actions are available.</p>
+      </Dialog>,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Empty dialog" });
+    const tabEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Tab",
+    });
+    document.dispatchEvent(tabEvent);
+
+    expect(tabEvent.defaultPrevented).toBe(true);
+    expect(dialog).toHaveFocus();
+  });
+
+  it("renders a reusable status label", () => {
+    render(<StatusLabel tone="success">Ready</StatusLabel>);
+
+    expect(screen.getByText("Ready")).toHaveClass("text-success");
+  });
+
   it("renders the three production workspace views and drops the learning-only ones", () => {
     render(<RagVisibilityDashboard {...baseProps} />);
 
@@ -164,6 +340,15 @@ describe("RagVisibilityDashboard", () => {
     // The Retrieval explainer and Settings diagnostics views were removed.
     expect(screen.queryByRole("button", { name: "Retrieval" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
+  });
+
+  it("keeps the support chat heading visible and accessible with the same name", () => {
+    render(<RagVisibilityDashboard {...baseProps} />);
+
+    expect(
+      screen.getByRole("heading", { name: "Support chat" }),
+    ).toHaveTextContent("Support chat");
+    expect(screen.queryByRole("heading", { name: "Support agent" })).toBeNull();
   });
 
   it("switches between the chat, knowledge and evaluations views", () => {
@@ -188,7 +373,7 @@ describe("RagVisibilityDashboard", () => {
     expect(screen.getByText("return_policy__chunk_001")).toBeInTheDocument();
     expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
     expect(
-      screen.getByRole("button", { name: "Re-embed corpus" }),
+      screen.getByRole("button", { name: "Build corpus version" }),
     ).toBeInTheDocument();
   });
 
@@ -231,7 +416,7 @@ describe("RagVisibilityDashboard", () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        askAction={async () => groundedAnswer}
+        askAction={async () => successfulAnswer(groundedAnswer)}
       />,
     );
 
@@ -260,9 +445,12 @@ describe("RagVisibilityDashboard", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("carries the conversation so a follow-up sends prior turns as context", async () => {
-    const askAction = vi.fn(async (input: { history: unknown[] }) =>
-      input.history.length === 0 ? groundedAnswer : followupAnswer,
+  it("keeps conversation context server-owned for follow-up questions", async () => {
+    const askAction = vi.fn(async (input: { conversationId: string | null }) =>
+      successfulAnswer({
+        ...(input.conversationId === null ? groundedAnswer : followupAnswer),
+        conversationId: "conversation-1",
+      }),
     );
 
     render(<RagVisibilityDashboard {...baseProps} askAction={askAction} />);
@@ -275,26 +463,62 @@ describe("RagVisibilityDashboard", () => {
       "Express orders placed before 2 PM ship the same day.",
     );
 
-    // Both turns stay on screen, and the second call carried the first turn.
+    // Both turns stay on screen, while the browser sends only the backend ID.
     expect(
       screen.getByText("Opened products may be returned within 30 days."),
     ).toBeInTheDocument();
     expect(askAction).toHaveBeenCalledTimes(2);
     const secondCall = askAction.mock.calls[1][0] as {
       question: string;
-      history: { question: string; answer: string }[];
+      conversationId: string | null;
+      requestId: string;
     };
-    expect(secondCall.history).toHaveLength(1);
-    expect(secondCall.history[0].question).toBe(
-      "Can customers return opened products?",
+    expect(secondCall.conversationId).toBe("conversation-1");
+    expect(secondCall.requestId).toEqual(expect.any(String));
+    expect(secondCall).not.toHaveProperty("history");
+  });
+
+  it("clears provenance focus when generic sources open for another turn", async () => {
+    const askAction = vi.fn(async (input: { conversationId: string | null }) =>
+      successfulAnswer({
+        ...(input.conversationId === null
+          ? groundedAnswer
+          : sameChunkFollowupAnswer),
+        conversationId: "conversation-1",
+      }),
     );
+
+    render(<RagVisibilityDashboard {...baseProps} askAction={askAction} />);
+
+    askQuestion("Can customers return opened products?");
+    await screen.findByText("Opened products may be returned within 30 days.");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Open source return_policy.md, Opened Products",
+      }),
+    );
+
+    askQuestion("What does the return policy require?");
+    await screen.findByText("Returns need the original order number.");
+
+    const sourceTriggers = screen.getAllByRole("button", {
+      name: "Sources: 1 cited of 1 retrieved",
+    });
+    fireEvent.click(sourceTriggers[sourceTriggers.length - 1]);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "View full chunk: return_policy.md, Opened Products",
+      }),
+    );
+
+    expect(document.querySelector("mark.evidence-sentence")).toBeNull();
   });
 
   it("clears the transcript when a new chat is started", async () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        askAction={async () => groundedAnswer}
+        askAction={async () => successfulAnswer(groundedAnswer)}
       />,
     );
 
@@ -315,7 +539,7 @@ describe("RagVisibilityDashboard", () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        askAction={async () => insufficientAnswer}
+        askAction={async () => successfulAnswer(insufficientAnswer)}
       />,
     );
 
@@ -335,16 +559,23 @@ describe("RagVisibilityDashboard", () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        askAction={async () => {
-          throw new Error("Answer generation failed.");
-        }}
+        askAction={async () => ({
+          ok: false,
+          error: {
+            code: "PROVIDER_TEMPORARY",
+            message: "The model service is temporarily unavailable. Try again.",
+            retryable: true,
+          },
+        })}
       />,
     );
 
     askQuestion("Can customers return opened products?");
 
     expect(
-      await screen.findByText("Answer generation failed."),
+      await screen.findByText(
+        "The model service is temporarily unavailable. Try again.",
+      ),
     ).toBeInTheDocument();
   });
 });

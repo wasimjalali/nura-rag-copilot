@@ -9,8 +9,14 @@
  */
 
 import type * as answerProvider from "../answerProvider.js";
+import type * as auth from "../auth.js";
+import type * as conversations from "../conversations.js";
+import type * as corpusVersions from "../corpusVersions.js";
 import type * as embeddingProvider from "../embeddingProvider.js";
+import type * as evaluations from "../evaluations.js";
 import type * as groundedAnswer from "../groundedAnswer.js";
+import type * as operations from "../operations.js";
+import type * as providerRetry from "../providerRetry.js";
 import type * as ragAnswer from "../ragAnswer.js";
 import type * as ragEmbedding from "../ragEmbedding.js";
 import type * as ragRetrieval from "../ragRetrieval.js";
@@ -24,8 +30,14 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   answerProvider: typeof answerProvider;
+  auth: typeof auth;
+  conversations: typeof conversations;
+  corpusVersions: typeof corpusVersions;
   embeddingProvider: typeof embeddingProvider;
+  evaluations: typeof evaluations;
   groundedAnswer: typeof groundedAnswer;
+  operations: typeof operations;
+  providerRetry: typeof providerRetry;
   ragAnswer: typeof ragAnswer;
   ragEmbedding: typeof ragEmbedding;
   ragRetrieval: typeof ragRetrieval;

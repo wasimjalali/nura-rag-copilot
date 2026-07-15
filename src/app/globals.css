@@ -113,7 +113,7 @@ body {
 /* ------------------------------------------------------------------ *
  * Components (copy-adapted from the design-craft recipe shelf).
  * In @layer components so Tailwind utilities (hidden, bg-*, etc.) can
- * override these — unlayered rules would otherwise beat every utility.
+ * override these. Unlayered rules would otherwise beat every utility.
  * ------------------------------------------------------------------ */
 @layer components {
 .card {
@@ -243,6 +243,16 @@ body {
   color: var(--accent-deep);
 }
 
+@media (max-width: 639px) {
+  .citation-control {
+    min-width: 40px;
+    min-height: 40px;
+    justify-content: center;
+    padding: 6px 8px;
+    vertical-align: middle;
+  }
+}
+
 /* Evidence card + signature highlight */
 .evidence-card {
   border: 1px solid var(--border);
@@ -260,15 +270,95 @@ body {
   background: var(--accent-soft);
 }
 .evidence-card[data-flash="true"] {
-  animation: evidence-flash 900ms var(--ease-out);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
-@keyframes evidence-flash {
-  0% {
-    box-shadow: 0 0 0 0 rgba(47, 111, 237, 0.45);
-  }
-  100% {
-    box-shadow: 0 0 0 8px rgba(47, 111, 237, 0);
-  }
+
+.evidence-tab {
+  position: relative;
+  color: var(--ink-muted);
+}
+.evidence-tab::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: 0;
+  left: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform 180ms var(--ease-out);
+}
+.evidence-tab[aria-selected="true"] {
+  color: var(--accent-deep);
+}
+.evidence-tab[aria-selected="true"]::after {
+  transform: scaleX(1);
+}
+
+.source-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-muted);
+  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out),
+    color 150ms var(--ease-out);
+}
+.source-trigger:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+/* Dense operational tables keep the scanning surface quiet while preserving
+   a clear hover target for detail inspection. Mobile uses stacked rows. */
+.operational-table tbody tr {
+  transition: background-color 150ms var(--ease-out);
+}
+.operational-table tbody tr:hover {
+  background-color: var(--sunken);
+}
+
+.answer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--ink-muted);
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.answer-action:hover,
+.answer-action[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.suggestion-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out),
+    box-shadow 150ms var(--ease-out);
+}
+.suggestion-button:hover {
+  border-color: var(--border-strong);
+  background: var(--sunken);
+  box-shadow: var(--shadow-card);
+}
+
+.evidence-sentence {
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  padding: 1px 2px;
 }
 
 /* Skeleton, entrances */

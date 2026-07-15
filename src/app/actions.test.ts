@@ -4,6 +4,8 @@ import { extractUploadedText } from "@/lib/rag/extract-upload";
 
 const writeFile = vi.fn();
 const fetchAction = vi.fn();
+const fetchMutation = vi.fn();
+const fetchQuery = vi.fn();
 const revalidatePath = vi.fn();
 
 vi.mock("node:fs", () => {
@@ -13,6 +15,8 @@ vi.mock("node:fs", () => {
 
 vi.mock("convex/nextjs", () => ({
   fetchAction: (...args: unknown[]) => fetchAction(...args),
+  fetchMutation: (...args: unknown[]) => fetchMutation(...args),
+  fetchQuery: (...args: unknown[]) => fetchQuery(...args),
 }));
 
 vi.mock("next/cache", () => ({
@@ -215,5 +219,85 @@ describe("addSyntheticDocumentAction", () => {
     expect(writtenPath).toMatch(/uploaded_policy\.md$/);
     expect(contents).toContain("# uploaded policy");
     expect(contents).toContain("Uploaded document body.");
+  });
+});
+
+describe("askGroundedQuestion", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    fetchAction.mockReset();
+  });
+
+  async function importAction() {
+    const mod = await import("./actions");
+    return mod.askGroundedQuestion;
+  }
+
+  it("returns a serialized success result", async () => {
+    const answer = {
+      question: "Can I return an opened product?",
+      answer: "Opened products may be returned within 30 days. [1]",
+    };
+    fetchAction.mockResolvedValue(answer);
+    const askGroundedQuestion = await importAction();
+
+    const result = await askGroundedQuestion({
+      question: "Can I return an opened product?",
+      conversationId: null,
+      requestId: "request-1",
+    });
+
+    expect(result).toEqual({ ok: true, data: answer });
+    expect(fetchAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        question: "Can I return an opened product?",
+        conversationId: undefined,
+        requestId: "request-1",
+      }),
+    );
+    expect(fetchAction.mock.calls[0][1]).not.toHaveProperty("history");
+  });
+
+  it("returns stable provider error data instead of throwing", async () => {
+    fetchAction.mockRejectedValue(
+      new Error("The model service is temporarily unavailable. Try again."),
+    );
+    const askGroundedQuestion = await importAction();
+
+    const result = await askGroundedQuestion({
+      question: "Can I return an opened product?",
+      conversationId: null,
+      requestId: "request-2",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "PROVIDER_TEMPORARY",
+        message: "The model service is temporarily unavailable. Try again.",
+        retryable: true,
+      },
+    });
+  });
+
+  it("returns a validation error result for an empty question", async () => {
+    const askGroundedQuestion = await importAction();
+
+    const result = await askGroundedQuestion({
+      question: "   ",
+      conversationId: null,
+      requestId: "request-3",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "VALIDATION_FAILED",
+        message: "Enter a question to get an answer.",
+        retryable: false,
+      },
+    });
+    expect(fetchAction).not.toHaveBeenCalled();
   });
 });

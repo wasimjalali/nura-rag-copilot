@@ -6,6 +6,7 @@ export type ChatTurn = {
   question: string;
   answer: GroundedAnswerResponse | null;
   error: string | null;
+  errorRetryable?: boolean;
 };
 
 // A saved conversation. The full turns (including retrieval evidence) are kept
@@ -21,6 +22,7 @@ export type Conversation = {
 // Single-user, local tool: history lives in the browser rather than a Convex
 // table (a server-side conversations store would be overkill for one user).
 const STORAGE_KEY = "nura.conversations.v1";
+const MIGRATION_KEY = "nura.conversations.migrated-to-convex.v1";
 export const MAX_CONVERSATIONS = 30;
 
 export function loadConversations(): Conversation[] {
@@ -55,6 +57,18 @@ export function saveConversations(conversations: Conversation[]): void {
     // Storage full or unavailable. History is best-effort, so drop it silently
     // rather than breaking the chat.
   }
+}
+
+export function loadLegacyConversationsForMigration(): Conversation[] {
+  if (typeof window === "undefined") return [];
+  if (window.localStorage.getItem(MIGRATION_KEY) === "true") return [];
+  return loadConversations();
+}
+
+export function markLegacyConversationMigrationComplete(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MIGRATION_KEY, "true");
+  window.localStorage.removeItem(STORAGE_KEY);
 }
 
 export function deriveConversationTitle(question: string): string {

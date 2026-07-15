@@ -5,7 +5,11 @@ import { api } from "../../convex/_generated/api";
 import {
   addSyntheticDocumentAction,
   askGroundedQuestion,
+  deleteConversationAction,
   embedSyntheticDocumentsAction,
+  loadConversationAction,
+  importLegacyConversationsAction,
+  promoteCorpusVersionAction,
 } from "./actions";
 import { chunkDocuments } from "@/lib/rag/chunk";
 import { loadSyntheticDocuments } from "@/lib/rag/load-documents";
@@ -15,9 +19,11 @@ import type { DocumentChunk, KnowledgeDocument } from "@/lib/rag/types";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [corpus, embeddingStorageStatus] = await Promise.all([
+  const [corpus, embeddingStorageStatus, conversations, evalRuns] = await Promise.all([
     loadCorpus(),
     getEmbeddingStorageStatus(),
+    getRecentConversations(),
+    getRecentEvalRuns(),
   ]);
   const { documents, chunks } = corpus;
 
@@ -28,9 +34,44 @@ export default async function Home() {
       addDocumentAction={addSyntheticDocumentAction}
       embedAction={embedSyntheticDocumentsAction}
       askAction={askGroundedQuestion}
+      deleteConversationAction={deleteConversationAction}
       embeddingStorageStatus={embeddingStorageStatus}
+      initialConversations={conversations}
+      initialEvalRuns={evalRuns}
+      importLegacyConversationsAction={importLegacyConversationsAction}
+      loadConversationAction={loadConversationAction}
+      promoteCorpusAction={promoteCorpusVersionAction}
     />
   );
+}
+
+async function getRecentConversations() {
+  try {
+    const conversations = await fetchQuery(api.conversations.listRecent);
+    return conversations.map((conversation) => ({
+      ...conversation,
+      id: conversation.id,
+      turns: [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function getRecentEvalRuns() {
+  try {
+    const runs = await fetchQuery(api.evaluations.listRecent);
+    return runs
+      .filter((run) => run.status === "completed")
+      .map((run) => ({
+        ranAt: run.ranAt,
+        total: run.total,
+        passed: run.passed,
+        results: run.results,
+      }));
+  } catch {
+    return [];
+  }
 }
 
 // Loading and chunking run on every request. Chunking throws loudly on a bad

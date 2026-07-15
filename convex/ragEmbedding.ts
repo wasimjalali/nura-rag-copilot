@@ -2,6 +2,8 @@ import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import { action } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { requireActor, requireRole } from "./auth";
 import {
   EMBEDDING_DIMENSIONS,
   readEmbeddingConfig,
@@ -21,6 +23,8 @@ const documentChunkInput = v.object({
   source: v.string(),
   section: v.string(),
   text: v.string(),
+  textHash: v.string(),
+  chunkerVersion: v.string(),
   tokenEstimate: v.number(),
 });
 
@@ -52,60 +56,99 @@ export const embedReviewedChunks = action({
       );
     }
 
+    const actor = await requireActor(ctx);
+    requireRole(actor, ["knowledge_manager", "operator"]);
     const startedAt = Date.now();
-    const runId = await ctx.runMutation(internal.ragStorage.startEmbeddingRun, {
-      documents: args.documents.length,
-      chunks: args.chunks.length,
-      startedAt,
-    });
+    let runId: Id<"embeddingRuns"> | undefined;
+    let versionId: Id<"corpusVersions"> | undefined;
 
     try {
       const config = readEmbeddingConfig();
-      const stored: { storedDocuments: number; storedChunks: number } =
-        await ctx.runMutation(
-          internal.ragStorage.upsertPreviewRecords,
-          {
-            documents: args.documents,
-            chunks: args.chunks,
-            now: Date.now(),
-          },
-        );
-
+      const chunkerVersion = args.chunks[0]?.chunkerVersion;
+      if (
+        !chunkerVersion ||
+        args.chunks.some((chunk) => chunk.chunkerVersion !== chunkerVersion)
+      ) {
+        throw new Error("The corpus contains incompatible chunker versions.");
+      }
+      versionId = await ctx.runMutation(internal.corpusVersions.createVersion, {
+        createdBy: actor.subject,
+        createdAt: startedAt,
+        documentCount: args.documents.length,
+        chunkCount: args.chunks.length,
+        embeddingModel: config.deployment,
+        embeddingDimensions: EMBEDDING_DIMENSIONS,
+        chunkerVersion,
+      });
+      runId = await ctx.runMutation(internal.ragStorage.startEmbeddingRun, {
+        corpusVersionId: versionId,
+        documents: args.documents.length,
+        chunks: args.chunks.length,
+        startedAt,
+      });
+      const reusable: Array<{ chunkId: string; embedding: number[] }> =
+        await ctx.runQuery(internal.corpusVersions.findReusableEmbeddings, {
+          chunks: args.chunks.map((chunk) => ({
+            chunkId: chunk.chunkId,
+            textHash: chunk.textHash,
+          })),
+          chunkerVersion,
+          embeddingModel: config.deployment,
+          embeddingDimensions: EMBEDDING_DIMENSIONS,
+        });
+      const reusableByChunkId = new Map(
+        reusable.map((item) => [item.chunkId, item.embedding]),
+      );
+      const missingChunks = args.chunks.filter(
+        (chunk) => !reusableByChunkId.has(chunk.chunkId),
+      );
+      let retryCount = 0;
       const vectors = await requestEmbeddings(
         config,
-        args.chunks.map((chunk) => chunk.text),
+        missingChunks.map((chunk) => chunk.text),
+        {
+          onRetry: () => {
+            retryCount += 1;
+          },
+        },
       );
 
-      if (vectors.length !== args.chunks.length) {
+      if (vectors.length !== missingChunks.length) {
         throw new Error(
-          `Expected ${args.chunks.length} embeddings but received ${vectors.length}.`,
+          `Expected ${missingChunks.length} embeddings but received ${vectors.length}.`,
         );
       }
-
-      const embeddings = vectors.map((embedding, index) => {
+      const generatedByChunkId = new Map<string, number[]>();
+      vectors.forEach((embedding, index) => {
         if (embedding.length !== EMBEDDING_DIMENSIONS) {
           throw new Error(
-            `Chunk ${args.chunks[index].chunkId} returned ${embedding.length} dimensions; expected ${EMBEDDING_DIMENSIONS}.`,
+            `Chunk ${missingChunks[index].chunkId} returned ${embedding.length} dimensions; expected ${EMBEDDING_DIMENSIONS}.`,
           );
         }
-
+        generatedByChunkId.set(missingChunks[index].chunkId, embedding);
+      });
+      const readyChunks = args.chunks.map((chunk) => {
+        const embedding =
+          reusableByChunkId.get(chunk.chunkId) ??
+          generatedByChunkId.get(chunk.chunkId);
+        if (!embedding) throw new Error(`Chunk ${chunk.chunkId} has no embedding.`);
         return {
-          chunkId: args.chunks[index].chunkId,
+          ...chunk,
           embedding,
           embeddingModel: config.deployment,
           embeddingDimensions: EMBEDDING_DIMENSIONS,
         };
       });
-
-      const embeddedAt = Date.now();
-      const embeddedChunks: number = await ctx.runMutation(
-        internal.ragStorage.saveEmbeddings,
-        {
-          embeddings,
-          embeddedAt,
-        },
-      );
-      const message = `Embedded ${embeddedChunks} chunks with ${config.deployment}.`;
+      const readyAt = Date.now();
+      await ctx.runMutation(internal.corpusVersions.storeReadyVersion, {
+        versionId,
+        documents: args.documents,
+        chunks: readyChunks,
+        reusedChunkCount: reusable.length,
+        readyAt,
+      });
+      const embeddedChunks = readyChunks.length;
+      const message = `Prepared ${embeddedChunks} chunks with ${reusable.length} reused vectors. Promote the ready corpus to activate it.`;
 
       await ctx.runMutation(internal.ragStorage.finishEmbeddingRun, {
         runId,
@@ -113,20 +156,75 @@ export const embedReviewedChunks = action({
         embeddedChunks,
         message,
       });
+      await ctx.runMutation(internal.operations.recordOperation, {
+        requestId: `embedding:${versionId}`,
+        actorSubject: actor.subject,
+        operationType: "embedding",
+        status: "succeeded",
+        corpusVersion: versionId,
+        modelIdentifiers: { embeddingModel: config.deployment },
+        timings: {
+          startedAt,
+          finishedAt: Date.now(),
+          durationMs: Date.now() - startedAt,
+          embeddingMs: Date.now() - startedAt,
+        },
+        retryCount,
+      }).catch((error) => {
+        console.error("Failed to record the embedding operation:", error);
+      });
 
       return {
-        ...stored,
+        storedDocuments: args.documents.length,
+        storedChunks: args.chunks.length,
         embeddedChunks,
         message,
       };
     } catch (error) {
       const message = toSafeErrorMessage(error);
-      await ctx.runMutation(internal.ragStorage.failEmbeddingRun, {
-        runId,
-        finishedAt: Date.now(),
-        message,
+      if (versionId) {
+        await ctx.runMutation(internal.corpusVersions.failVersion, {
+          versionId,
+          failedAt: Date.now(),
+          errorCode: embeddingErrorCode(message),
+        });
+      }
+      if (runId) {
+        await ctx.runMutation(internal.ragStorage.failEmbeddingRun, {
+          runId,
+          finishedAt: Date.now(),
+          message,
+        });
+      }
+      await ctx.runMutation(internal.operations.recordOperation, {
+        requestId: `embedding:${versionId ?? startedAt}`,
+        actorSubject: actor.subject,
+        operationType: "embedding",
+        status: "failed",
+        corpusVersion: versionId,
+        modelIdentifiers: {},
+        timings: {
+          startedAt,
+          finishedAt: Date.now(),
+          durationMs: Date.now() - startedAt,
+        },
+        retryCount: 0,
+        errorCode: embeddingErrorCode(message),
+      }).catch((operationError) => {
+        console.error("Failed to record the embedding failure:", operationError);
       });
       throw new Error(message);
     }
   },
 });
+
+function embeddingErrorCode(message: string) {
+  if (message.includes("rate limited")) return "RATE_LIMITED" as const;
+  if (message.includes("temporarily unavailable")) {
+    return "PROVIDER_TEMPORARY" as const;
+  }
+  if (message.includes("invalid response")) {
+    return "INVALID_MODEL_RESPONSE" as const;
+  }
+  return "INTERNAL_ERROR" as const;
+}
