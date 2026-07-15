@@ -9,6 +9,7 @@ import {
   type EvalRunResult,
 } from "@/lib/eval/manual-eval-set";
 import { evaluateCase, type GroundedAnswerForEval } from "@/lib/eval/run-eval";
+import { toPublicAppError } from "@/lib/rag/app-errors";
 
 /**
  * Runs the full manual eval battery against the live RAG loop. Sequential
@@ -39,6 +40,12 @@ export async function runEvalsAction(): Promise<EvalRunResult> {
         detail: outcome.detail,
       });
     } catch (error) {
+      const publicError = toPublicAppError(error, {
+        code: "INTERNAL_ERROR",
+        message: "The evaluation case could not be completed.",
+        retryable: false,
+      });
+
       results.push({
         id: evalCase.id,
         question: evalCase.question,
@@ -47,7 +54,7 @@ export async function runEvalsAction(): Promise<EvalRunResult> {
         status: "fail",
         answerType: "error",
         citedSources: [],
-        detail: error instanceof Error ? error.message : String(error),
+        detail: publicError.message,
       });
     }
   }

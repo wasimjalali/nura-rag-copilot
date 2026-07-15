@@ -42,4 +42,62 @@ export default defineSchema({
     chunks: v.number(),
     embeddedChunks: v.number(),
   }).index("by_started_at", ["startedAt"]),
+
+  operations: defineTable({
+    requestId: v.string(),
+    actorSubject: v.optional(v.string()),
+    operationType: v.union(
+      v.literal("answer"),
+      v.literal("embedding"),
+      v.literal("evaluation"),
+    ),
+    status: v.union(
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+    ),
+    corpusVersion: v.optional(v.string()),
+    modelIdentifiers: v.object({
+      answerModel: v.optional(v.string()),
+      embeddingModel: v.optional(v.string()),
+    }),
+    timings: v.object({
+      startedAt: v.number(),
+      finishedAt: v.optional(v.number()),
+      durationMs: v.optional(v.number()),
+      retrievalMs: v.optional(v.number()),
+      generationMs: v.optional(v.number()),
+      embeddingMs: v.optional(v.number()),
+    }),
+    retrievalSummary: v.optional(
+      v.object({
+        resultCount: v.number(),
+        topScore: v.optional(v.number()),
+        citedChunkCount: v.optional(v.number()),
+      }),
+    ),
+    retryCount: v.number(),
+    tokenUsage: v.optional(
+      v.object({
+        inputTokens: v.optional(v.number()),
+        outputTokens: v.optional(v.number()),
+        totalTokens: v.optional(v.number()),
+      }),
+    ),
+    errorCode: v.optional(
+      v.union(
+        v.literal("AUTH_REQUIRED"),
+        v.literal("FORBIDDEN"),
+        v.literal("RATE_LIMITED"),
+        v.literal("CORPUS_NOT_READY"),
+        v.literal("PROVIDER_TEMPORARY"),
+        v.literal("INVALID_MODEL_RESPONSE"),
+        v.literal("VALIDATION_FAILED"),
+        v.literal("INTERNAL_ERROR"),
+      ),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_request_id", ["requestId"])
+    .index("by_created_at", ["createdAt"]),
 });

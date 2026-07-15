@@ -1,3 +1,10 @@
+import {
+  parseRetryAfter,
+  providerError,
+  withProviderRetry,
+  type ProviderRetryOptions,
+} from "./providerRetry";
+
 export type AnswerConfig = {
   endpoint: string;
   apiKey: string;
@@ -51,39 +58,45 @@ const ANSWER_TIMEOUT_MS = 60000;
 export async function requestChatCompletion(
   config: AnswerConfig,
   messages: ChatMessage[],
+  retryOptions?: ProviderRetryOptions,
 ) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ANSWER_TIMEOUT_MS);
+  const body = await withProviderRetry(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ANSWER_TIMEOUT_MS);
 
-  let body: ChatCompletionResponse;
+    try {
+      const response = await fetch(toChatCompletionsUrl(config.endpoint), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": config.apiKey,
+        },
+        body: JSON.stringify({
+          model: config.deployment,
+          messages,
+          temperature: 0.2,
+          max_completion_tokens: 500,
+        }),
+        signal: controller.signal,
+      });
+      const responseBody = (await response
+        .json()
+        .catch(() => ({}))) as ChatCompletionResponse;
 
-  try {
-    const response = await fetch(toChatCompletionsUrl(config.endpoint), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "api-key": config.apiKey,
-      },
-      body: JSON.stringify({
-        model: config.deployment,
-        messages,
-        temperature: 0.2,
-        max_completion_tokens: 500,
-      }),
-      signal: controller.signal,
-    });
+      if (!response.ok) {
+        throw providerError(
+          response.status,
+          responseBody.error?.message ??
+            `Chat completion request failed with status ${response.status}.`,
+          parseRetryAfter(response.headers?.get("retry-after") ?? null),
+        );
+      }
 
-    body = (await response.json().catch(() => ({}))) as ChatCompletionResponse;
-
-    if (!response.ok) {
-      throw new Error(
-        body.error?.message ??
-          `Chat completion request failed with status ${response.status}.`,
-      );
+      return responseBody;
+    } finally {
+      clearTimeout(timeout);
     }
-  } finally {
-    clearTimeout(timeout);
-  }
+  }, retryOptions);
 
   const content = body.choices?.[0]?.message?.content;
 
