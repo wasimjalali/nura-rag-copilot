@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { EvaluationsWorkspace } from "./evaluations-workspace";
 import type { EvalRunResult } from "@/lib/eval/manual-eval-set";
+import { actionSuccess, type ActionResult } from "@/lib/rag/app-errors";
 
 const passingRun: EvalRunResult = {
   ranAt: "2026-07-15T10:00:00.000Z",
@@ -34,10 +35,10 @@ const passingRun: EvalRunResult = {
 
 describe("EvaluationsWorkspace", () => {
   it("keeps the previous evaluation result while rerunning", () => {
-    let resolveRun: ((result: EvalRunResult) => void) | undefined;
+    let resolveRun: ((result: ActionResult<EvalRunResult>) => void) | undefined;
     const runAction = vi.fn(
       () =>
-        new Promise<EvalRunResult>((resolve) => {
+        new Promise<ActionResult<EvalRunResult>>((resolve) => {
           resolveRun = resolve;
         }),
     );
@@ -63,7 +64,7 @@ describe("EvaluationsWorkspace", () => {
       <EvaluationsWorkspace
         history={[]}
         initialRun={passingRun}
-        runAction={async () => passingRun}
+        runAction={async () => actionSuccess(passingRun)}
       />,
     );
 
@@ -78,5 +79,28 @@ describe("EvaluationsWorkspace", () => {
     expect(
       within(table).queryByRole("row", { name: /Can customers return opened products\?/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders a serialized action error without relying on a thrown Error", async () => {
+    render(
+      <EvaluationsWorkspace
+        history={[]}
+        initialRun={passingRun}
+        runAction={async () => ({
+          ok: false,
+          error: {
+            code: "RATE_LIMITED",
+            message: "The model service is rate limited. Try again shortly.",
+            retryable: true,
+          },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Run evaluations" }));
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("The model service is rate limited. Try again shortly.");
   });
 });

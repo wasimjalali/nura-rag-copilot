@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { providerError, withProviderRetry } from "./providerRetry";
+import {
+  providerError,
+  tagProviderFetchError,
+  transientNetworkError,
+  withProviderRetry,
+} from "./providerRetry";
 
 describe("provider retry", () => {
   it("retries transient failures and respects the attempt cap", async () => {
@@ -63,10 +68,24 @@ describe("provider retry", () => {
     expect(attempts).toBe(1);
   });
 
-  it.each([
-    new TypeError("fetch failed"),
-    new DOMException("request timed out", "AbortError"),
-  ])("retries transient network failures", async (failure) => {
+  it("does not retry an untagged TypeError", async () => {
+    const failure = new TypeError("invalid request options");
+    let attempts = 0;
+
+    await expect(
+      withProviderRetry(
+        async () => {
+          attempts += 1;
+          throw failure;
+        },
+        { sleep: async () => undefined },
+      ),
+    ).rejects.toBe(failure);
+    expect(attempts).toBe(1);
+  });
+
+  it("retries an explicitly tagged network failure", async () => {
+    const failure = transientNetworkError(new TypeError("fetch failed"));
     let attempts = 0;
 
     await expect(
@@ -79,6 +98,36 @@ describe("provider retry", () => {
       ),
     ).rejects.toBe(failure);
     expect(attempts).toBe(3);
+  });
+
+  it("retries request timeouts", async () => {
+    const failure = new DOMException("request timed out", "AbortError");
+    let attempts = 0;
+
+    await expect(
+      withProviderRetry(
+        async () => {
+          attempts += 1;
+          throw failure;
+        },
+        { sleep: async () => undefined },
+      ),
+    ).rejects.toBe(failure);
+    expect(attempts).toBe(3);
+  });
+
+  it("tags only fetch TypeErrors with an explicit network cause", () => {
+    const networkFailure = Object.assign(new TypeError("fetch failed"), {
+      cause: { code: "ECONNRESET" },
+    });
+    const invalidUrl = Object.assign(new TypeError("Invalid URL"), {
+      cause: { code: "ERR_INVALID_URL" },
+    });
+
+    expect(tagProviderFetchError(networkFailure)).toMatchObject({
+      name: "TransientNetworkError",
+    });
+    expect(tagProviderFetchError(invalidUrl)).toBe(invalidUrl);
   });
 
   it("respects Retry-After before using backoff", async () => {

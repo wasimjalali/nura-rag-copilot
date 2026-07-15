@@ -9,7 +9,11 @@ import {
   type EvalRunResult,
 } from "@/lib/eval/manual-eval-set";
 import { evaluateCase, type GroundedAnswerForEval } from "@/lib/eval/run-eval";
-import { toPublicAppError } from "@/lib/rag/app-errors";
+import {
+  actionSuccess,
+  toPublicAppError,
+  type ActionResult,
+} from "@/lib/rag/app-errors";
 
 /**
  * Runs the full manual eval battery against the live RAG loop. Sequential
@@ -17,7 +21,7 @@ import { toPublicAppError } from "@/lib/rag/app-errors";
  * completion call through Foundry, and running them one at a time avoids
  * hammering the model. A full run is expected to take on the order of ~30s.
  */
-export async function runEvalsAction(): Promise<EvalRunResult> {
+export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
   const results: EvalCaseResult[] = [];
 
   for (const evalCase of MANUAL_EVAL_SET) {
@@ -55,14 +59,15 @@ export async function runEvalsAction(): Promise<EvalRunResult> {
         answerType: "error",
         citedSources: [],
         detail: publicError.message,
+        error: publicError,
       });
     }
   }
 
-  return {
+  return actionSuccess({
     ranAt: new Date().toISOString(),
     total: results.length,
     passed: results.filter((result) => result.status === "pass").length,
     results,
-  };
+  });
 }

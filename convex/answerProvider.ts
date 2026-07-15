@@ -1,6 +1,7 @@
 import {
   parseRetryAfter,
   providerError,
+  tagProviderFetchError,
   withProviderRetry,
   type ProviderRetryOptions,
 } from "./providerRetry";
@@ -65,20 +66,27 @@ export async function requestChatCompletion(
     const timeout = setTimeout(() => controller.abort(), ANSWER_TIMEOUT_MS);
 
     try {
-      const response = await fetch(toChatCompletionsUrl(config.endpoint), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "api-key": config.apiKey,
-        },
-        body: JSON.stringify({
-          model: config.deployment,
-          messages,
-          temperature: 0.2,
-          max_completion_tokens: 500,
-        }),
-        signal: controller.signal,
-      });
+      let response: Response;
+
+      try {
+        response = await fetch(toChatCompletionsUrl(config.endpoint), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "api-key": config.apiKey,
+          },
+          body: JSON.stringify({
+            model: config.deployment,
+            messages,
+            temperature: 0.2,
+            max_completion_tokens: 500,
+          }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw tagProviderFetchError(error);
+      }
+
       const responseBody = (await response
         .json()
         .catch(() => ({}))) as ChatCompletionResponse;

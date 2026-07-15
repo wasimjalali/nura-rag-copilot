@@ -11,6 +11,7 @@ import {
 import type { DocumentChunk, KnowledgeDocument } from "@/lib/rag/types";
 import type { GroundedAnswerResponse } from "@/lib/rag/grounded-answer";
 import type { EmbeddingStorageStatus } from "@/lib/rag/storage-records";
+import type { ActionResult } from "@/lib/rag/app-errors";
 import { runEvalsAction } from "@/app/eval-actions";
 import { EvaluationsWorkspace } from "@/components/evaluations/evaluations-workspace";
 import { KnowledgeWorkspace } from "@/components/knowledge/knowledge-workspace";
@@ -42,7 +43,7 @@ import {
 type AskAction = (input: {
   question: string;
   history: { question: string; answer: string }[];
-}) => Promise<GroundedAnswerResponse>;
+}) => Promise<ActionResult<GroundedAnswerResponse>>;
 
 type RagVisibilityDashboardProps = {
   documents: KnowledgeDocument[];
@@ -145,18 +146,35 @@ export function RagVisibilityDashboard({
 
     setPendingQuestion(question);
     try {
-      const answer = await askAction({ question, history });
+      const result = await askAction({ question, history });
       if (conversationRef.current !== guardToken) {
         return;
       }
       turnSeq.current += 1;
+
+      if (!result.ok) {
+        const nextTurns = [
+          ...priorTurns,
+          {
+            id: `turn_${turnSeq.current}`,
+            question,
+            answer: null,
+            error: result.error.message,
+          },
+        ];
+        setTurns(nextTurns);
+        persistConversation(nextTurns);
+        return;
+      }
+
+      const answer = result.data;
       const nextTurns = [
         ...priorTurns,
         { id: `turn_${turnSeq.current}`, question, answer, error: null },
       ];
       setTurns(nextTurns);
       persistConversation(nextTurns);
-    } catch (error) {
+    } catch {
       if (conversationRef.current !== guardToken) {
         return;
       }
@@ -167,10 +185,7 @@ export function RagVisibilityDashboard({
           id: `turn_${turnSeq.current}`,
           question,
           answer: null,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Could not generate an answer.",
+          error: "Could not generate an answer.",
         },
       ];
       setTurns(nextTurns);

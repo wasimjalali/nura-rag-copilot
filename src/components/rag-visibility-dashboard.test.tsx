@@ -9,6 +9,7 @@ import { WorkspaceShell, type WorkspaceView } from "@/components/workspace/works
 import { WorkspaceNav } from "@/components/workspace/workspace-nav";
 import { Dialog } from "@/components/ui/dialog";
 import { StatusLabel } from "@/components/ui/status-label";
+import { actionSuccess } from "@/lib/rag/app-errors";
 
 function WorkspaceShellHarness({
   conversations = [],
@@ -196,12 +197,16 @@ const insufficientAnswer: GroundedAnswerResponse = {
   },
 };
 
+function successfulAnswer(answer: GroundedAnswerResponse) {
+  return actionSuccess(answer);
+}
+
 const baseProps = {
   chunks,
   documents,
   addDocumentAction: async () => {},
   embedAction: async () => {},
-  askAction: async () => groundedAnswer,
+  askAction: async () => successfulAnswer(groundedAnswer),
   embeddingStorageStatus,
 };
 
@@ -411,7 +416,7 @@ describe("RagVisibilityDashboard", () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        askAction={async () => groundedAnswer}
+        askAction={async () => successfulAnswer(groundedAnswer)}
       />,
     );
 
@@ -442,7 +447,9 @@ describe("RagVisibilityDashboard", () => {
 
   it("carries the conversation so a follow-up sends prior turns as context", async () => {
     const askAction = vi.fn(async (input: { history: unknown[] }) =>
-      input.history.length === 0 ? groundedAnswer : followupAnswer,
+      successfulAnswer(
+        input.history.length === 0 ? groundedAnswer : followupAnswer,
+      ),
     );
 
     render(<RagVisibilityDashboard {...baseProps} askAction={askAction} />);
@@ -472,7 +479,11 @@ describe("RagVisibilityDashboard", () => {
 
   it("clears provenance focus when generic sources open for another turn", async () => {
     const askAction = vi.fn(async (input: { history: unknown[] }) =>
-      input.history.length === 0 ? groundedAnswer : sameChunkFollowupAnswer,
+      successfulAnswer(
+        input.history.length === 0
+          ? groundedAnswer
+          : sameChunkFollowupAnswer,
+      ),
     );
 
     render(<RagVisibilityDashboard {...baseProps} askAction={askAction} />);
@@ -505,7 +516,7 @@ describe("RagVisibilityDashboard", () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        askAction={async () => groundedAnswer}
+        askAction={async () => successfulAnswer(groundedAnswer)}
       />,
     );
 
@@ -526,7 +537,7 @@ describe("RagVisibilityDashboard", () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        askAction={async () => insufficientAnswer}
+        askAction={async () => successfulAnswer(insufficientAnswer)}
       />,
     );
 
@@ -546,16 +557,23 @@ describe("RagVisibilityDashboard", () => {
     render(
       <RagVisibilityDashboard
         {...baseProps}
-        askAction={async () => {
-          throw new Error("Answer generation failed.");
-        }}
+        askAction={async () => ({
+          ok: false,
+          error: {
+            code: "PROVIDER_TEMPORARY",
+            message: "The model service is temporarily unavailable. Try again.",
+            retryable: true,
+          },
+        })}
       />,
     );
 
     askQuestion("Can customers return opened products?");
 
     expect(
-      await screen.findByText("Answer generation failed."),
+      await screen.findByText(
+        "The model service is temporarily unavailable. Try again.",
+      ),
     ).toBeInTheDocument();
   });
 });

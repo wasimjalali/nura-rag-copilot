@@ -1,5 +1,18 @@
 const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 500;
+const TRANSIENT_NETWORK_CODES = new Set([
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENETDOWN",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
 
 export type ProviderRetryOptions = {
   sleep?: (milliseconds: number) => Promise<void>;
@@ -25,12 +38,39 @@ export class ProviderRequestError extends Error {
   }
 }
 
+export class TransientNetworkError extends Error {
+  constructor(cause: unknown) {
+    super("The provider network request failed.", { cause });
+    this.name = "TransientNetworkError";
+  }
+}
+
 export function providerError(
   status: number,
   message: string,
   retryAfterMs?: number,
 ) {
   return new ProviderRequestError(status, message, retryAfterMs);
+}
+
+export function transientNetworkError(cause: unknown) {
+  return new TransientNetworkError(cause);
+}
+
+export function tagProviderFetchError(error: unknown) {
+  if (error instanceof TransientNetworkError) {
+    return error;
+  }
+
+  if (!(error instanceof TypeError)) {
+    return error;
+  }
+
+  const code = readErrorCode(error.cause);
+
+  return code && TRANSIENT_NETWORK_CODES.has(code)
+    ? transientNetworkError(error)
+    : error;
 }
 
 export async function withProviderRetry<T>(
@@ -86,6 +126,10 @@ export function parseRetryAfter(
 }
 
 export function isTransientProviderError(error: unknown) {
+  if (error instanceof TransientNetworkError) {
+    return true;
+  }
+
   if (error instanceof ProviderRequestError) {
     return (
       error.status === 408 ||
@@ -94,15 +138,19 @@ export function isTransientProviderError(error: unknown) {
     );
   }
 
-  if (error instanceof TypeError) {
-    return true;
-  }
-
   if (typeof error !== "object" || error === null || !("name" in error)) {
     return false;
   }
 
   return error.name === "AbortError" || error.name === "TimeoutError";
+}
+
+function readErrorCode(value: unknown) {
+  if (typeof value !== "object" || value === null || !("code" in value)) {
+    return undefined;
+  }
+
+  return typeof value.code === "string" ? value.code : undefined;
 }
 
 function retryDelayMs(

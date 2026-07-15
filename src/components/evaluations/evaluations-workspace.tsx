@@ -10,11 +10,12 @@ import {
   type EvalCategory,
   type EvalRunResult,
 } from "@/lib/eval/manual-eval-set";
+import type { ActionResult } from "@/lib/rag/app-errors";
 
 export type EvaluationWorkspaceProps = {
   initialRun: EvalRunResult | null;
   history: EvalRunResult[];
-  runAction: () => Promise<EvalRunResult>;
+  runAction: () => Promise<ActionResult<EvalRunResult>>;
   runLabel?: string;
 };
 
@@ -66,7 +67,14 @@ export function EvaluationsWorkspace({
     setError(null);
     setIsRunning(true);
     try {
-      const nextRun = await runAction();
+      const result = await runAction();
+
+      if (!result.ok) {
+        setError(result.error.message);
+        return;
+      }
+
+      const nextRun = result.data;
       setActiveRun(nextRun);
       setLocalHistory((current) => {
         const currentRun = activeRun ? [activeRun, ...current] : current;
@@ -74,8 +82,8 @@ export function EvaluationsWorkspace({
           new Map(currentRun.map((run) => [run.ranAt, run])).values(),
         );
       });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The eval run failed.");
+    } catch {
+      setError("The eval run failed.");
     } finally {
       setIsRunning(false);
     }

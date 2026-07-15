@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  actionFailure,
+  actionSuccess,
   AppError,
   toPublicAppError,
   type PublicAppError,
@@ -67,4 +69,28 @@ describe("public application errors", () => {
       });
     },
   );
+
+  it("round-trips action success and failure results through JSON", () => {
+    const success = actionSuccess({ answer: "Grounded answer" });
+    const failure = actionFailure(
+      new AppError(
+        "PROVIDER_TEMPORARY",
+        "The model service is temporarily unavailable.",
+        true,
+      ),
+    );
+
+    expect(JSON.parse(JSON.stringify(success))).toEqual({
+      ok: true,
+      data: { answer: "Grounded answer" },
+    });
+    expect(JSON.parse(JSON.stringify(failure))).toEqual({
+      ok: false,
+      error: {
+        code: "PROVIDER_TEMPORARY",
+        message: "The model service is temporarily unavailable.",
+        retryable: true,
+      },
+    });
+  });
 });

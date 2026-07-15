@@ -9,8 +9,11 @@ import { revalidatePath } from "next/cache";
 import { api } from "../../convex/_generated/api";
 import { chunkDocuments } from "@/lib/rag/chunk";
 import {
+  actionFailure,
+  actionSuccess,
   AppError,
   toPublicAppError,
+  type ActionResult,
   type PublicAppError,
 } from "@/lib/rag/app-errors";
 import { extractUploadedText } from "@/lib/rag/extract-upload";
@@ -86,33 +89,39 @@ export type ConversationHistoryTurn = {
 export async function askGroundedQuestion(input: {
   question: string;
   history: ConversationHistoryTurn[];
-}): Promise<GroundedAnswerResponse> {
+}): Promise<ActionResult<GroundedAnswerResponse>> {
   const question = input.question.trim();
 
   if (!question) {
-    throw new AppError(
-      "VALIDATION_FAILED",
-      "Enter a question to get an answer.",
-      false,
+    return actionFailure(
+      new AppError(
+        "VALIDATION_FAILED",
+        "Enter a question to get an answer.",
+        false,
+      ),
     );
   }
 
   if (question.length > MAX_QUESTION_LENGTH) {
-    throw new AppError(
-      "VALIDATION_FAILED",
-      `That question is too long. Keep it under ${MAX_QUESTION_LENGTH} characters.`,
-      false,
+    return actionFailure(
+      new AppError(
+        "VALIDATION_FAILED",
+        `That question is too long. Keep it under ${MAX_QUESTION_LENGTH} characters.`,
+        false,
+      ),
     );
   }
 
   try {
-    return await fetchAction(api.ragAnswer.generateGroundedAnswer, {
-      question,
-      history: input.history.slice(-MAX_HISTORY_TURNS_SENT),
-      limit: RETRIEVAL_LIMIT,
-    });
+    return actionSuccess(
+      await fetchAction(api.ragAnswer.generateGroundedAnswer, {
+        question,
+        history: input.history.slice(-MAX_HISTORY_TURNS_SENT),
+        limit: RETRIEVAL_LIMIT,
+      }),
+    );
   } catch (error) {
-    throwPublicAppError(error, {
+    return actionFailure(error, {
       code: "INTERNAL_ERROR",
       message: "The answer could not be generated.",
       retryable: false,

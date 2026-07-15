@@ -3,6 +3,7 @@ import {
   parseRetryAfter,
   ProviderRequestError,
   providerError,
+  tagProviderFetchError,
   withProviderRetry,
   type ProviderRetryOptions,
 } from "./providerRetry";
@@ -99,20 +100,27 @@ async function requestEmbeddingBatch(
     const timeout = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
 
     try {
-      const response = await fetch(toEmbeddingsUrl(config.endpoint), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "api-key": config.apiKey,
-        },
-        body: JSON.stringify({
-          model: config.deployment,
-          input,
-          dimensions: EMBEDDING_DIMENSIONS,
-          encoding_format: "float",
-        }),
-        signal: controller.signal,
-      });
+      let response: Response;
+
+      try {
+        response = await fetch(toEmbeddingsUrl(config.endpoint), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "api-key": config.apiKey,
+          },
+          body: JSON.stringify({
+            model: config.deployment,
+            input,
+            dimensions: EMBEDDING_DIMENSIONS,
+            encoding_format: "float",
+          }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw tagProviderFetchError(error);
+      }
+
       const responseBody = (await response
         .json()
         .catch(() => ({}))) as EmbeddingResponse;

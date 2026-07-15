@@ -14,6 +14,10 @@ export type PublicAppError = {
   retryable: boolean;
 };
 
+export type ActionResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: PublicAppError };
+
 export class AppError extends Error implements PublicAppError {
   readonly code: AppErrorCode;
   readonly retryable: boolean;
@@ -83,4 +87,18 @@ export function toPublicAppError(
   }
 
   return fallback;
+}
+
+export function actionSuccess<T>(data: T): ActionResult<T> {
+  return { ok: true, data };
+}
+
+export function actionFailure(
+  error: unknown,
+  fallback?: PublicAppError,
+): ActionResult<never> {
+  return {
+    ok: false,
+    error: toPublicAppError(error, fallback),
+  };
 }
