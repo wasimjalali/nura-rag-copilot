@@ -314,6 +314,15 @@ body {
   color: var(--accent-deep);
 }
 
+/* Dense operational tables keep the scanning surface quiet while preserving
+   a clear hover target for detail inspection. Mobile uses stacked rows. */
+.operational-table tbody tr {
+  transition: background-color 150ms var(--ease-out);
+}
+.operational-table tbody tr:hover {
+  background-color: var(--sunken);
+}
+
 .answer-action {
   display: inline-flex;
   align-items: center;

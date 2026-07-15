@@ -19,6 +19,8 @@ import type {
   EvalRunResult,
 } from "@/lib/eval/manual-eval-set";
 import { runEvalsAction } from "@/app/eval-actions";
+import { EvaluationsWorkspace } from "@/components/evaluations/evaluations-workspace";
+import { KnowledgeWorkspace } from "@/components/knowledge/knowledge-workspace";
 import {
   buildEvidenceItems as buildChatEvidenceItems,
   ChatWorkspace,
@@ -341,15 +343,25 @@ export function RagVisibilityDashboard({
       ) : (
         <ScrollView>
           {activeView === "knowledge" ? (
-            <KnowledgeView
+            <KnowledgeWorkspace
               addDocumentAction={addDocumentAction}
               chunks={chunks}
               documents={documents}
               embedAction={embedAction}
-              retrievalReady={retrievalReady}
+              embeddingStorageStatus={embeddingStorageStatus}
+              indexActionLabel={
+                retrievalReady ? "Re-embed corpus" : "Store and embed chunks"
+              }
             />
           ) : null}
-          {activeView === "evaluations" ? <EvaluationsView /> : null}
+          {activeView === "evaluations" ? (
+            <EvaluationsWorkspace
+              history={[]}
+              initialRun={null}
+              runAction={runEvalsAction}
+              runLabel="Run evals"
+            />
+          ) : null}
         </ScrollView>
       )}
 
