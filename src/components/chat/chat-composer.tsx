@@ -56,8 +56,8 @@ export function ChatComposer({
             onKeyDown={handleKeyDown}
             placeholder={
               disabled
-                ? "Embed the corpus to start asking questions"
-                : "Ask about returns, shipping, allergens, discounts…"
+                ? "Promote a corpus to start"
+                : "Ask about support policies…"
             }
             rows={1}
             value={value}

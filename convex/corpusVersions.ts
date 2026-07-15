@@ -233,18 +233,33 @@ export const promoteReady = mutation({
     requireRole(actor, ["knowledge_manager", "operator"]);
     const version = await ctx.db.get(args.versionId);
     if (!version) throw new Error("The corpus version does not exist.");
+    const corpus = await ctx.db.get(version.corpusId);
+    if (!corpus) throw new Error("The corpus does not exist.");
+    if (
+      version.status === "active" &&
+      corpus.activeVersionId === version._id
+    ) {
+      return { activeVersionId: version._id };
+    }
     validatePromotionReadiness(
       version.status,
       version.embeddedChunkCount,
       version.chunkCount,
     );
-    const corpus = await ctx.db.get(version.corpusId);
-    if (!corpus) throw new Error("The corpus does not exist.");
     const now = Date.now();
     if (corpus.activeVersionId) {
       const active = await ctx.db.get(corpus.activeVersionId);
       if (active?.status === "active") {
         await ctx.db.patch(active._id, { status: "archived", updatedAt: now });
+      }
+    }
+    const versions = await ctx.db
+      .query("corpusVersions")
+      .withIndex("by_corpus_created", (q) => q.eq("corpusId", corpus._id))
+      .collect();
+    for (const other of versions) {
+      if (other._id !== version._id && other.status === "ready") {
+        await ctx.db.patch(other._id, { status: "archived", updatedAt: now });
       }
     }
     await ctx.db.patch(version._id, {

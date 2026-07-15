@@ -113,7 +113,7 @@ body {
 /* ------------------------------------------------------------------ *
  * Components (copy-adapted from the design-craft recipe shelf).
  * In @layer components so Tailwind utilities (hidden, bg-*, etc.) can
- * override these — unlayered rules would otherwise beat every utility.
+ * override these. Unlayered rules would otherwise beat every utility.
  * ------------------------------------------------------------------ */
 @layer components {
 .card {

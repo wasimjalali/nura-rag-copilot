@@ -381,9 +381,7 @@ export function RagVisibilityDashboard({
               embedAction={embedAction}
               embeddingStorageStatus={embeddingStorageStatus}
               promoteAction={promoteCorpusAction}
-              indexActionLabel={
-                retrievalReady ? "Re-embed corpus" : "Store and embed chunks"
-              }
+              indexActionLabel="Build corpus version"
             />
           ) : null}
           {activeView === "evaluations" ? (

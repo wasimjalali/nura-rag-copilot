@@ -2,7 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { action, internalQuery } from "./_generated/server";
+import { internalAction, internalQuery } from "./_generated/server";
 import {
   EMBEDDING_DIMENSIONS,
   readEmbeddingConfig,
@@ -58,7 +58,7 @@ type RetrievalResponse = {
   retryCount: number;
 };
 
-export const retrieveRelevantChunks = action({
+export const retrieveRelevantChunks = internalAction({
   args: {
     question: v.string(),
     limit: v.optional(v.number()),

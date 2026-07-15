@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { action, type ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -179,7 +179,7 @@ export const generateGroundedAnswer = action({
       );
       const retrievalStartedAt = Date.now();
       const retrieval: RetrievalForAnswer = await ctx.runAction(
-        api.ragRetrieval.retrieveRelevantChunks,
+        internal.ragRetrieval.retrieveRelevantChunks,
         {
           // Fold recent questions into the retrieval query so a short follow-up
           // still finds the right chunks.
@@ -260,27 +260,33 @@ export const generateGroundedAnswer = action({
       });
       return response;
     } catch (error) {
+      const cleanup: Array<Promise<unknown>> = [];
       if (pending && !pending.duplicate) {
-        await ctx.runMutation(internal.conversations.failTurn, {
-          assistantMessageId: pending.assistantMessageId,
-          errorCode: toOperationErrorCode(error),
-          now: Date.now(),
-        });
+        cleanup.push(
+          ctx.runMutation(internal.conversations.failTurn, {
+            assistantMessageId: pending.assistantMessageId,
+            errorCode: toOperationErrorCode(error),
+            now: Date.now(),
+          }),
+        );
       }
-      await ctx.runMutation(internal.operations.recordOperation, {
-        requestId: args.requestId,
-        actorSubject: actor.subject,
-        operationType: "answer",
-        status: "failed",
-        modelIdentifiers: {},
-        timings: {
-          startedAt,
-          finishedAt: Date.now(),
-          durationMs: Date.now() - startedAt,
-        },
-        retryCount: 0,
-        errorCode: toOperationErrorCode(error),
-      });
+      cleanup.push(
+        ctx.runMutation(internal.operations.recordOperation, {
+          requestId: args.requestId,
+          actorSubject: actor.subject,
+          operationType: "answer",
+          status: "failed",
+          modelIdentifiers: {},
+          timings: {
+            startedAt,
+            finishedAt: Date.now(),
+            durationMs: Date.now() - startedAt,
+          },
+          retryCount: 0,
+          errorCode: toOperationErrorCode(error),
+        }),
+      );
+      await Promise.allSettled(cleanup);
       throw new Error(toSafeErrorMessage(error));
     }
   },
@@ -350,6 +356,8 @@ async function recordAnswerOperation(
       ).size,
     },
     retryCount: input.retryCount,
+  }).catch((error) => {
+    console.error("Failed to record the answer operation:", error);
   });
 }
 

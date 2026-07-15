@@ -170,6 +170,8 @@ export const embedReviewedChunks = action({
           embeddingMs: Date.now() - startedAt,
         },
         retryCount,
+      }).catch((error) => {
+        console.error("Failed to record the embedding operation:", error);
       });
 
       return {
@@ -208,6 +210,8 @@ export const embedReviewedChunks = action({
         },
         retryCount: 0,
         errorCode: embeddingErrorCode(message),
+      }).catch((operationError) => {
+        console.error("Failed to record the embedding failure:", operationError);
       });
       throw new Error(message);
     }

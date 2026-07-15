@@ -33,4 +33,29 @@ describe("runEvalsAction", () => {
     });
     expect(fetchMutation).toHaveBeenCalled();
   });
+
+  it("interrupts the run when a case result cannot be persisted", async () => {
+    fetchAction.mockResolvedValue({
+      structuredAnswer: { answerType: "insufficient_evidence", paragraphs: [] },
+      retrieval: { results: [] },
+    });
+    fetchMutation
+      .mockResolvedValueOnce("run-1")
+      .mockRejectedValueOnce(new Error("database unavailable"))
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    const { runEvalsAction } = await import("./eval-actions");
+
+    const result = await runEvalsAction();
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "The evaluation result could not be saved.",
+        retryable: true,
+      },
+    });
+    expect(fetchAction).toHaveBeenCalledTimes(1);
+  });
 });

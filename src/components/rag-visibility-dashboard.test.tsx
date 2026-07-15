@@ -373,7 +373,7 @@ describe("RagVisibilityDashboard", () => {
     expect(screen.getByText("return_policy__chunk_001")).toBeInTheDocument();
     expect(screen.getAllByText("Opened Products").length).toBeGreaterThan(0);
     expect(
-      screen.getByRole("button", { name: "Re-embed corpus" }),
+      screen.getByRole("button", { name: "Build corpus version" }),
     ).toBeInTheDocument();
   });
 

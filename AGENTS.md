@@ -42,10 +42,15 @@ The focus is a clear, correct core RAG loop. Out of scope unless the project dir
 - [x] Answers are grounded with citations, across multi-turn conversations.
 - [x] Unsupported claims are refused.
 - [x] A live evaluation battery grades the real loop (`src/lib/eval/manual-eval-set.ts`).
+- [x] Conversations, messages and evidence snapshots persist in Convex.
+- [x] Evaluation runs and per-case outcomes persist in Convex.
+- [x] Corpus builds are versioned, reuse compatible embeddings and require explicit promotion.
+- [x] Provider calls use bounded retry and safe operation records.
+- [x] Production functions require Convex identity. Anonymous access is limited to the explicit local development flag.
 
 ## Development Workflow
 
-- Verify each change: `npx tsc --noEmit`, `npm run lint`, and `npm test` should all pass before considering work done.
+- Verify each change: `npx tsc --noEmit`, `npm run lint`, `npm test` and `npm run build` should all pass before considering work done.
 - Prefer test-first development for custom behavior.
 - For Next.js-specific changes, follow the current App Router documentation rather than older framework memory.
 - Keep the README accurate when behavior changes.
@@ -53,3 +58,10 @@ The focus is a clear, correct core RAG loop. Out of scope unless the project dir
 ## Interface
 
 The core RAG loop is wrapped in a production-grade workspace UI: a multi-turn chat view with inline citations, an on-demand sources panel, and a saved-conversation history; a knowledge base for documents and chunks; and a live evaluations view. All visual work follows the `design-craft` discipline and the role-named tokens in `src/app/globals.css`.
+
+## Deployment Model
+
+- Deploy one application and one Convex project per B2B customer.
+- Keep customer terminology in `src/lib/nura-config.ts`.
+- Do not add billing, public signup or tenant switching to the shared foundation.
+- Set `NURA_ALLOW_ANONYMOUS_DEV=true` only on local development deployments. Production uses Convex identity and role claims.

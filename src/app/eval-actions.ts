@@ -45,6 +45,7 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
 
   for (const evalCase of MANUAL_EVAL_SET) {
     const caseStartedAt = Date.now();
+    let result: EvalCaseResult;
     try {
       const answer: GroundedAnswerForEval = await fetchAction(
         api.ragAnswer.generateGroundedAnswer,
@@ -57,7 +58,7 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
 
       const outcome = evaluateCase(evalCase.assertion, answer);
 
-      const result: EvalCaseResult = {
+      result = {
         id: evalCase.id,
         question: evalCase.question,
         category: evalCase.category,
@@ -67,7 +68,28 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
         citedSources: outcome.citedSources,
         detail: outcome.detail,
       };
-      results.push(result);
+    } catch (error) {
+      const publicError = toPublicAppError(error, {
+        code: "INTERNAL_ERROR",
+        message: "The evaluation case could not be completed.",
+        retryable: false,
+      });
+
+      result = {
+        id: evalCase.id,
+        question: evalCase.question,
+        category: evalCase.category,
+        expectation: evalCase.expectation,
+        status: "fail",
+        answerType: "error",
+        citedSources: [],
+        detail: publicError.message,
+        error: publicError,
+      };
+    }
+
+    results.push(result);
+    try {
       await fetchMutation(api.evaluations.addCaseResult, {
         runId,
         caseId: result.id,
@@ -81,36 +103,31 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
         durationMs: Date.now() - caseStartedAt,
       });
     } catch (error) {
-      const publicError = toPublicAppError(error, {
-        code: "INTERNAL_ERROR",
-        message: "The evaluation case could not be completed.",
-        retryable: false,
-      });
-
-      const result: EvalCaseResult = {
-        id: evalCase.id,
-        question: evalCase.question,
-        category: evalCase.category,
-        expectation: evalCase.expectation,
-        status: "fail",
-        answerType: "error",
-        citedSources: [],
-        detail: publicError.message,
-        error: publicError,
+      const finishedAt = Date.now();
+      const passed = results.filter((item) => item.status === "pass").length;
+      await Promise.allSettled([
+        fetchMutation(api.evaluations.finishRun, {
+          runId,
+          status: "interrupted",
+          passed,
+          finishedAt,
+        }),
+        fetchMutation(api.operations.recordEvaluation, {
+          requestId: `evaluation:${runId}`,
+          status: "failed",
+          startedAt,
+          finishedAt,
+          errorCode: "INTERNAL_ERROR",
+        }),
+      ]);
+      return {
+        ok: false,
+        error: toPublicAppError(error, {
+          code: "INTERNAL_ERROR",
+          message: "The evaluation result could not be saved.",
+          retryable: true,
+        }),
       };
-      results.push(result);
-      await fetchMutation(api.evaluations.addCaseResult, {
-        runId,
-        caseId: result.id,
-        question: result.question,
-        category: result.category,
-        expectation: result.expectation,
-        status: result.status,
-        answerType: result.answerType,
-        citedSources: result.citedSources,
-        detail: result.detail,
-        durationMs: Date.now() - caseStartedAt,
-      }).catch(() => undefined);
     }
   }
 
@@ -128,6 +145,8 @@ export async function runEvalsAction(): Promise<ActionResult<EvalRunResult>> {
       status: "succeeded",
       startedAt,
       finishedAt,
+    }).catch((error) => {
+      console.error("Failed to record the evaluation operation:", error);
     });
   } catch (error) {
     return {
